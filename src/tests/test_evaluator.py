@@ -1,6 +1,4 @@
-import pytest
-
-from harness.evaluator import EvaluationResult, Evaluator
+from harness.evaluator import Evaluator
 
 
 def test_evaluator_passed():
@@ -37,3 +35,15 @@ def test_evaluator_timeout():
     )
     assert result.passed is False
     assert "timeout" in result.error.lower()
+
+
+def test_evaluator_no_command_returns_passed(monkeypatch):
+    def fail_if_run(*args, **kwargs):
+        raise AssertionError("subprocess.run must not be called for the no-eval sentinel")
+
+    monkeypatch.setattr("harness.evaluator.subprocess.run", fail_if_run)
+    result = Evaluator().evaluate(command="")
+    assert result.passed is True
+    assert result.output == ""
+    assert result.error == ""
+    assert result.exit_code is None
