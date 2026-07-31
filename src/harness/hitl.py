@@ -4,7 +4,14 @@ import sys
 import time
 from typing import Any, Callable, Optional, TextIO
 
-DEFAULT_DANGEROUS_COMMANDS = ["rm -rf", "git push --force", "DROP TABLE", "format C:"]
+DEFAULT_DANGEROUS_COMMANDS = [
+    "rm -rf",
+    "shutdown",
+    "format",
+    "dd if=",
+    "git push --force",
+    "DROP TABLE",
+]
 
 
 class GuardrailEngine:
