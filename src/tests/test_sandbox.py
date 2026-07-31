@@ -63,6 +63,26 @@ def test_sandbox_blocks_dangerous_command(tmp_path):
     assert check("run_shell", {"command": "echo ok"}) is True
 
 
+def test_sandbox_blocks_compound_and_system_dir_commands(tmp_path):
+    sb, _ = _sandbox(tmp_path)
+
+    assert sb.check_command("rm -rf /; echo done") is False
+    assert sb.check_command("rm -rf /|cat") is False
+    assert sb.check_command("rm -rf / && echo done") is False
+    assert sb.check_command("echo $(rm -rf /)") is False
+    assert sb.check_command("x=`rm -rf /`") is False
+
+    assert sb.check_command("rm -rf C:\\Windows") is False
+    assert sb.check_command("rm -rf C:/Windows") is False
+    assert sb.check_command("rm -rf /Windows") is False
+    assert sb.check_command("rm -rf /etc") is False
+    assert sb.check_command("rm -rf /usr") is False
+    assert sb.check_command("rm -rf /bin") is False
+
+    assert sb.check_command("rm -rf /tmp/somewhere") is True
+    assert sb.check_command("echo done; echo hi") is True
+
+
 def test_sandbox_timeout(tmp_path):
     sb, _ = _sandbox(tmp_path, timeout=1)
 

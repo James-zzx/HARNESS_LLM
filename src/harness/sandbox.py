@@ -8,12 +8,25 @@ import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
+# A destructive `rm` whose TARGET is the filesystem/drive root: the target must be
+# followed by end-of-string, whitespace, or a shell operator (`;` `|` `&&` `||` `>` `<`
+# backtick `$(...)`) so scoped deletes like `rm -rf /tmp/x` stay allowed while compound
+# forms like `rm -rf /; echo done` / `echo $(rm -rf /)` are caught.
+_ARMED_RM_PREFIX = r"\brm\b\s+(?:-+\S+\s+)*"
 DEFAULT_BLOCKED_COMMANDS = (
     r"\bshutdown\b",
     r"\breboot\b",
-    r"\brm\b\s+(?:(?:-+[a-zA-Z]*[rf][a-zA-Z]*)\s*){1,6}\s*(?:/|/[*]|C:\\|C:/)(?:\s.*)?$",
+    _ARMED_RM_PREFIX
+    + r"(?:/[*]?|[a-zA-Z]:[\\/])"
+    r"(?=$|[\s;|&<>`()$])",
+    # System-directory deletion is a different risk class than a scoped /tmp/x delete:
+    # any `rm` targeting a system directory (Windows or unix) is blocked outright.
+    _ARMED_RM_PREFIX
+    + r".*?(?:/(?:etc|usr|bin|Windows)|[a-zA-Z]:[\\/](?:Windows|Program Files))",
+    # --no-preserve-root is a deliberate root-deletion marker; never allow it with `rm`.
+    r"\brm\b[\s\S]*--no-preserve-root",
 )
 
 _PATH_TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir"})
@@ -58,6 +71,8 @@ class Sandbox:
         self.memory_limit: Optional[int] = cfg.get("memory_limit")
         self.network: bool = bool(cfg.get("network", True))
         self._processes: set = set()
+        self._blocked_paths = [Path(b).resolve() for b in self.blocked_dirs]
+        self._allowed_paths = [Path(a).resolve() for a in self.allowed_dirs]
 
     def _resolve_candidates(self, path: Union[str, Path]) -> List[Path]:
         candidate = Path(path)
@@ -68,12 +83,10 @@ class Sandbox:
     def is_allowed_path(self, path: Union[str, Path]) -> bool:
         if not self.allowed_dirs or not path:
             return False
-        blocked = [Path(b).resolve() for b in self.blocked_dirs]
-        allowed = [Path(a).resolve() for a in self.allowed_dirs]
         for candidate in self._resolve_candidates(path):
-            if any(_is_within(candidate, b) for b in blocked):
+            if any(_is_within(candidate, b) for b in self._blocked_paths):
                 continue
-            if any(_is_within(candidate, a) for a in allowed):
+            if any(_is_within(candidate, a) for a in self._allowed_paths):
                 return True
         return False
 
