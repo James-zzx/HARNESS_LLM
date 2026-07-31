@@ -1,4 +1,6 @@
 import json
+import sys
+import time
 
 import pytest
 
@@ -57,6 +59,26 @@ def test_run_shell_failure(executor):
     assert result.success is False
     assert result.exit_code is not None
     assert result.exit_code != 0
+
+
+def test_run_shell_timeout_without_sandbox(work_dir):
+    executor = ToolExecutor(work_dir=work_dir, shell_timeout=0.5)
+
+    start = time.monotonic()
+    result = executor.execute(
+        {
+            "tool": "run_shell",
+            "params": {
+                "command": f'"{sys.executable}" -c "import time; time.sleep(5)"'
+            },
+        }
+    )
+    elapsed = time.monotonic() - start
+
+    assert result.success is False
+    assert result.exit_code is not None
+    assert result.exit_code != 0
+    assert elapsed < 3
 
 
 def test_tool_registry_lookup():

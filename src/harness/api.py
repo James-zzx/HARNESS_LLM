@@ -99,20 +99,14 @@ def _map_status(status: str) -> TaskStatus:
 
 def _default_runner() -> TaskRunner:
     from harness.config import load_config
-    from harness.llm_adapter import DEFAULT_BASE_URL, LLMFactory
+    from harness.llm_adapter import build_llm
     from harness.runtime import build_runtime
 
     config = load_config()
     runtime = build_runtime(config)
 
     def run(task: Task, gate: HITLGate) -> RunResult:
-        llm = LLMFactory(
-            mock=config.llm.mock,
-            model=config.llm.model,
-            base_url=config.llm.base_url or DEFAULT_BASE_URL,
-            timeout=config.llm.timeout,
-            max_retries=config.llm.max_retries,
-        ).create()
+        llm = build_llm(config)
         orchestrator = runtime.build_orchestrator(
             llm=llm,
             hitl_checker=gate.check,

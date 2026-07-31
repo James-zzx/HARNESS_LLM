@@ -1,4 +1,6 @@
 import json
+import sys
+import time
 
 from harness.config import HITLConfig, HarnessConfig, SandboxConfig
 from harness.mock_llm import MockLLM
@@ -131,3 +133,32 @@ def test_runtime_hitl_disabled_does_not_pause(tmp_path):
     result = orch.run(Task(id="rt-no-hitl", prompt="push changes"))
 
     assert result.status == "COMPLETED"
+
+
+def test_runtime_run_shell_enforces_sandbox_timeout(tmp_path):
+    work = tmp_path / "workspace"
+    work.mkdir()
+    config = HarnessConfig(
+        sandbox=SandboxConfig(
+            enabled=True,
+            timeout=1,
+            allowed_dirs=[str(work)],
+            blocked_commands=["rm -rf /", "shutdown", "format", "dd if="],
+            network="deny",
+        )
+    )
+    runtime = build_runtime(config, work_dir=work)
+
+    start = time.monotonic()
+    result = runtime.tool_executor.execute(
+        {
+            "tool": "run_shell",
+            "params": {
+                "command": f'"{sys.executable}" -c "import time; time.sleep(30)"'
+            },
+        }
+    )
+    elapsed = time.monotonic() - start
+
+    assert result.success is False
+    assert elapsed < 10

@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from harness.credential_store import CredentialStore, EnvBackend
+
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_TIMEOUT = 120.0
@@ -107,3 +109,36 @@ class LLMFactory:
             timeout=self._timeout,
             max_retries=self._max_retries,
         )
+
+
+def _store_for_config(config, credential_store=None) -> CredentialStore:
+    if credential_store is not None:
+        return credential_store
+    backend = getattr(getattr(config, "credential", None), "backend", "keyring")
+    if backend == "env":
+        return CredentialStore(backend=EnvBackend())
+    return CredentialStore()
+
+
+def build_llm(config, credential_store=None) -> LLMClient:
+    """Build an LLM client from config, resolving ``credential_ref`` when needed.
+
+    Credential resolution (and thus any keyring access) is skipped entirely in
+    mock mode. The backend is chosen from ``config.credential.backend``
+    (``keyring`` or ``env``) unless a store is injected.
+    """
+    api_key = ""
+    if not config.llm.mock:
+        credential_ref = config.llm.credential_ref
+        if credential_ref and "/" in credential_ref:
+            service, _, key = credential_ref.partition("/")
+            store = _store_for_config(config, credential_store)
+            api_key = store.get_key(service, key) or ""
+    return LLMFactory(
+        mock=config.llm.mock,
+        model=config.llm.model,
+        base_url=config.llm.base_url or DEFAULT_BASE_URL,
+        api_key=api_key,
+        timeout=config.llm.timeout,
+        max_retries=config.llm.max_retries,
+    ).create()

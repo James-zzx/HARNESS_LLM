@@ -1,7 +1,11 @@
+import json
+
 from fastapi.testclient import TestClient
 
-from harness.api import TaskManager, create_app
-from harness.orchestrator import RunResult
+from harness.api import TaskManager, _default_runner, create_app
+from harness.hitl import HITLGate
+from harness.mock_llm import MockLLM
+from harness.orchestrator import RunResult, Task
 
 
 class _PauseRunner:
@@ -47,3 +51,20 @@ def test_api_task_not_found():
     with _client() as client:
         response = client.get("/api/tasks/does-not-exist")
         assert response.status_code == 404
+
+
+def test_api_default_runner_builds_llm_via_shared_helper(monkeypatch, tmp_path):
+    seen = {}
+
+    def spy_build_llm(config, credential_store=None):
+        seen["called"] = True
+        return MockLLM([json.dumps({"done": True})])
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", spy_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    runner = _default_runner()
+    result = runner(Task(id="api-cred", prompt="hi"), HITLGate())
+
+    assert seen.get("called") is True
+    assert result.status == "COMPLETED"

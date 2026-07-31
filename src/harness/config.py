@@ -229,7 +229,9 @@ def _extract_env(env: Mapping[str, str]) -> dict[str, dict[str, str]]:
 def load_config(path: Optional[str] = None, env: Optional[Mapping[str, str]] = None) -> HarnessConfig:
     env = os.environ if env is None else env
     config = HarnessConfig()
-    if path and os.path.exists(path):
+    if path:
+        if not os.path.exists(path):
+            raise ConfigError(f"Config file not found: {path}")
         config = config.merge(_read_file(path))
     if env:
         env_data = _extract_env(env)

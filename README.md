@@ -128,12 +128,12 @@ python -m harness init
 
 | Section | 关键字段 | 默认值 | 说明 |
 |---------|---------|--------|------|
-| `llm` | `mock` / `model` / `base_url` / `credential_ref` / `timeout` / `max_retries` | `mock: false`, `model: gpt-4o`, `timeout: 120`, `max_retries: 3` | LLM 端点与模型；`mock: true` 使用 MockLLM（离线）；`credential_ref` 引用凭据 `service/key` |
+| `llm` | `mock` / `model` / `base_url` / `credential_ref` / `timeout` / `max_retries` | `mock: false`, `model: gpt-4o`, `timeout: 120`, `max_retries: 3` | LLM 端点与模型；`mock: true` 使用 MockLLM（离线，不访问凭据存储）；`credential_ref` 引用凭据 `service/key` |
 | `sandbox` | `enabled` / `timeout` / `max_memory_mb` / `allowed_dirs` / `blocked_dirs` / `blocked_commands` / `network` | `enabled: true`, `allowed_dirs: ["."]`, `network: deny`, `blocked_commands: ["rm -rf /", "shutdown", "format", "dd if="]` | 子进程沙箱：文件系统白名单、命令黑名单、网络 `allow/deny`、资源限制 |
 | `hitl` | `enabled` / `dangerous_commands` / `approval_timeout` | `enabled: true`, `approval_timeout: 300` | 危险命令规则引擎与 HITL 审批超时；`dangerous_commands` 默认并集 `["rm -rf", "shutdown", "format", "dd if=", "git push --force", "DROP TABLE"]` |
 | `logging` | `level` / `format` / `file_path` | `level: INFO`, `format: console` | 结构化日志；`format: json` 输出 JSON，`file_path` 开启 JSON 日志文件 |
 | `open_design` | `enabled` / `port` / `data_dir` / `daemon_url` | `enabled: false`, `port: 3000`, `data_dir: .open_design` | Open Design WebUI 集成 |
-| `credential` | `service` / `backend` | `service: harness`, `backend: keyring` | 凭据存储后端：`keyring`（OS 钥匙串）或 `env` |
+| `credential` | `service` / `backend` | `service: harness`, `backend: keyring` | 凭据存储后端：`keyring`（OS 钥匙串）或 `env`（环境变量）。`env` 从 `HARNESS_<SERVICE>_<KEY>` 读取（如 `llm/api_key` → `HARNESS_LLM_API_KEY`），值在进程环境中明文可见 |
 
 完整可注释示例见 [examples/config.yaml](examples/config.yaml)。
 
@@ -223,6 +223,8 @@ export HARNESS_SANDBOX_NETWORK=allow
 ## 凭据安全配置说明
 
 - **存储**：凭据通过 `keyring` 库存入 OS 原生钥匙串（Windows Credential Manager / macOS Keychain / Linux Secret Service），不落盘明文。
+- **`env` 后端**：`credential.backend: env` 时，凭据从环境变量 `HARNESS_<SERVICE>_<KEY>` 读取（`credential_ref: llm/api_key` → `HARNESS_LLM_API_KEY`），用 `.env` 文件 + `set -a` 或容器 `-e` 注入；环境变量为明文且对同机进程可见（`/proc/*/environ`），仅在钥匙串不可用（如容器）时使用。
+- **Mock 模式**：`llm.mock: true` 完全不访问凭据存储（不触碰钥匙串/环境变量），离线安全运行。
 - **录入**：`harness cred set <service> <key>` 使用 `getpass` 隐藏输入，避免进入 Shell 历史与终端日志。
 - **引用**：配置中仅写 `credential_ref: <service>/<key>`，绝不硬编码 Key 值；`harness config show` 与日志都会将敏感字段脱敏。
 - **列出**：`harness cred list <service>` 只显示 Key 名称，不显示明文。

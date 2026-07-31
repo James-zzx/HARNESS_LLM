@@ -94,6 +94,8 @@ def build_runtime(config: HarnessConfig, work_dir: Union[str, Path] = ".") -> Ru
     tool_executor = ToolExecutor(
         work_dir=str(work_dir_path),
         sandbox_check=sandbox_check,
+        sandbox=sandbox if config.sandbox.enabled else None,
+        shell_timeout=config.sandbox.timeout,
     )
 
     return Runtime(

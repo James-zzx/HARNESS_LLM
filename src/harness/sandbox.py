@@ -8,7 +8,7 @@ import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # A destructive `rm` whose TARGET is the filesystem/drive root: the target must be
 # followed by end-of-string, whitespace, or a shell operator (`;` `|` `&&` `||` `>` `<`
@@ -51,6 +51,52 @@ def _is_within(child: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _terminate_process(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
+def communicate_with_timeout(
+    proc: subprocess.Popen, timeout: Optional[float]
+) -> Tuple[str, str, bool]:
+    """communicate() bounded by ``timeout``, killing the whole tree on expiry.
+
+    Returns ``(stdout, stderr, timed_out)``. Without this the direct child is
+    killed on timeout but its descendants (e.g. ``shell=True`` grandchildren)
+    can keep the pipes open, hanging the caller.
+    """
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return stdout, stderr, False
+    except subprocess.TimeoutExpired:
+        _terminate_process(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            _terminate_process(proc)
+            stdout, stderr = proc.communicate()
+        return stdout, stderr, True
 
 
 class Sandbox:
@@ -121,6 +167,8 @@ class Sandbox:
         shell: Optional[bool] = None,
         network: bool = False,
     ) -> RunResult:
+        if timeout is None:
+            timeout = self.timeout
         if network and not self.check_network():
             return RunResult(error="network access denied by sandbox")
         if not self.check_command(command):
@@ -146,17 +194,7 @@ class Sandbox:
             self._apply_process_limits(proc)
             if self.memory_limit is not None:
                 self._start_memory_watcher(proc)
-            try:
-                stdout, stderr = proc.communicate(timeout=timeout)
-                timed_out = False
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                self._terminate(proc)
-                try:
-                    stdout, stderr = proc.communicate(timeout=10)
-                except subprocess.TimeoutExpired:
-                    self._terminate(proc)
-                    stdout, stderr = proc.communicate()
+            stdout, stderr, timed_out = communicate_with_timeout(proc, timeout)
             return RunResult(
                 returncode=proc.returncode,
                 stdout=stdout,
@@ -181,27 +219,7 @@ class Sandbox:
         self.close()
 
     def _terminate(self, proc: subprocess.Popen) -> None:
-        if os.name == "nt":
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                    capture_output=True,
-                    timeout=5,
-                )
-            except Exception:
-                pass
-            try:
-                proc.kill()
-            except Exception:
-                pass
-        else:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+        _terminate_process(proc)
 
     def _apply_process_limits(self, proc: subprocess.Popen) -> None:
         if os.name == "nt":
