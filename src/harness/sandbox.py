@@ -89,19 +89,36 @@ def _rm_targets_root_or_system(command: str) -> bool:
     """True if an `rm` invocation targets a path normalizing to root/system dir."""
     if not re.search(r"\brm\b", command, re.IGNORECASE):
         return False
-    tokens = command.split()
-    for index, token in enumerate(tokens):
-        if not re.fullmatch(r"rm", token, re.IGNORECASE):
+    # Split on shell operators first so every operator-glued command segment is
+    # scanned independently: a safe first target can no longer mask a later
+    # dangerous `rm` (`/tmp/x && rm -rf /tmp/../..`, `/tmp/x;rm -rf /tmp/../..`).
+    segments = _RM_OPERATOR_SPLIT.split(command)
+    for index, segment in enumerate(segments):
+        stripped = segment.strip()
+        if not stripped:
             continue
-        for following in tokens[index + 1 :]:
-            if following == "-" or following.startswith("-"):
-                continue
-            if _RM_OPERATOR_SPLIT.search(following):
-                segments = _RM_OPERATOR_SPLIT.split(following)
-                if any(_normalized_target_is_dangerous(segment) for segment in segments if segment):
-                    return True
-                break
-            if _normalized_target_is_dangerous(following):
+        if re.search(r"\brm\b", stripped, re.IGNORECASE):
+            tokens = stripped.split()
+            for token_index, token in enumerate(tokens):
+                if not re.fullmatch(r"rm", token, re.IGNORECASE):
+                    continue
+                for following in tokens[token_index + 1 :]:
+                    if following == "-" or following.startswith("-"):
+                        continue
+                    if _normalized_target_is_dangerous(following):
+                        return True
+                    break
+            continue
+        # An operator wrapper split the target away from its `rm` invocation
+        # (e.g. ``rm -rf `/tmp/../..` ``): the segment before it is an `rm` still
+        # awaiting its target, and this bare segment is that target.
+        if _normalized_target_is_dangerous(stripped):
+            previous_tokens = segments[index - 1].strip().split() if index > 0 else []
+            if (
+                previous_tokens
+                and previous_tokens[0].lower() == "rm"
+                and all(token.startswith("-") for token in previous_tokens[1:])
+            ):
                 return True
     return False
 

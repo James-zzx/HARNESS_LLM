@@ -3,7 +3,7 @@ import re
 import sys
 import threading
 import time
-from typing import Any, Callable, Optional, TextIO
+from typing import Any, Callable, List, Optional, TextIO
 
 DEFAULT_DANGEROUS_COMMANDS = [
     "rm -rf",
@@ -161,8 +161,8 @@ class HITLStateMachine:
                 return "timeout"
             out.write("Approve dangerous action? (y/n/t) ")
             out.flush()
-            line = source.readline()
-            if not line:
+            line = self._readline_bounded(source)
+            if line is None:
                 self.timeout()
                 return "timeout"
             choice = line.strip().lower()
@@ -175,6 +175,32 @@ class HITLStateMachine:
             if choice == "t":
                 self.timeout()
                 return "timeout"
+
+    def _readline_bounded(self, source: TextIO) -> Optional[str]:
+        """One line from ``source``, or ``None`` on EOF/closed stream/deadline.
+
+        ``readline`` can block indefinitely (a silent terminal, an open-but-idle
+        pipe), so it runs in a daemon thread joined for the remaining approval
+        deadline; a closed stream (``ValueError``/``OSError``) or EOF degrades to
+        the same clean ``None`` -> timeout.
+        """
+        result: List[Optional[str]] = []
+
+        def _read() -> None:
+            try:
+                line = source.readline()
+            except (ValueError, OSError):
+                line = ""
+            result.append(line if line else None)
+
+        deadline = (self._paused_at or self._clock()) + self._approval_timeout
+        remaining = deadline - self._clock()
+        reader = threading.Thread(target=_read, daemon=True, name="hitl-readline")
+        reader.start()
+        reader.join(max(remaining, 0.0))
+        if reader.is_alive():
+            return None
+        return result[0] if result else None
 
 
 class HITLGate:

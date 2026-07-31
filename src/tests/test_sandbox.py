@@ -113,6 +113,20 @@ def test_sandbox_blocks_traversal_with_attached_operator(tmp_path):
     assert sb.check_command("echo done; rm -rf /tmp/y") is True
 
 
+def test_sandbox_blocks_second_rm_glued_to_operator(tmp_path):
+    sb, _ = _sandbox(tmp_path)
+
+    assert sb.check_command("rm -rf /tmp/x&&rm -rf /tmp/../..") is False
+    assert sb.check_command("rm -rf /tmp/x;rm -rf /tmp/../..") is False
+    assert sb.check_command("rm -rf /tmp/x;rm -rf C:\\Users\\..\\..") is False
+    assert sb.check_command("rm -rf /tmp/x && rm -rf /tmp/../..") is False
+
+    assert sb.check_command("rm -rf /tmp/x") is True
+    assert sb.check_command("rm -rf /tmp/../x") is True
+    assert sb.check_command("echo done; rm -rf /tmp/y") is True
+    assert sb.check_command("rm -rf /tmp/x && rm -rf /tmp/y") is True
+
+
 def test_sandbox_timeout(tmp_path):
     sb, _ = _sandbox(tmp_path, timeout=1)
 
