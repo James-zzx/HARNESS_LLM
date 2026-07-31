@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, TextIO, Union
 
 from harness.config import HarnessConfig
 from harness.hitl import GuardrailEngine, HITLGate
@@ -91,7 +91,13 @@ class Runtime:
         )
 
 
-def build_runtime(config: HarnessConfig, work_dir: Union[str, Path] = ".") -> Runtime:
+def build_runtime(
+    config: HarnessConfig,
+    work_dir: Union[str, Path] = ".",
+    *,
+    hitl_input_stream: Optional[TextIO] = None,
+    hitl_output_stream: Optional[TextIO] = None,
+) -> Runtime:
     work_dir_path = Path(work_dir).resolve()
 
     sandbox = Sandbox(
@@ -107,6 +113,8 @@ def build_runtime(config: HarnessConfig, work_dir: Union[str, Path] = ".") -> Ru
         hitl_gate = HITLGate(
             engine=GuardrailEngine(config.hitl.dangerous_commands),
             approval_timeout=config.hitl.approval_timeout,
+            input_stream=hitl_input_stream,
+            output_stream=hitl_output_stream,
         )
         default_hitl_checker: Callable[[str, dict], bool] = hitl_gate.check
         default_approval: Callable[[str, dict], bool] = hitl_gate.decide

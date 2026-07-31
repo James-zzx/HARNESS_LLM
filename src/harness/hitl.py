@@ -184,10 +184,17 @@ class HITLGate:
         approval_timeout: int = 300,
         clock: Optional[Callable[[], float]] = None,
         decision_source: Optional[Callable[[], str]] = None,
+        input_stream: Optional[TextIO] = None,
+        output_stream: Optional[TextIO] = None,
     ):
         self.engine = engine or GuardrailEngine()
         self._machine = HITLStateMachine(approval_timeout=approval_timeout, clock=clock)
-        self._decision_source = decision_source or self._machine.await_external_decision
+        if decision_source is None and (input_stream is not None or output_stream is not None):
+            self._decision_source = lambda: self._machine.wait_for_decision(
+                input_stream=input_stream, output_stream=output_stream
+            )
+        else:
+            self._decision_source = decision_source or self._machine.await_external_decision
 
     @property
     def state(self) -> str:

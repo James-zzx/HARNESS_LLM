@@ -134,10 +134,57 @@ def test_cli_run_prints_rejection_feedback(tmp_path, monkeypatch):
         def build_orchestrator(self, llm, **kwargs):
             return _FakeOrchestrator()
 
-    monkeypatch.setattr("harness.main.build_runtime", lambda config: _FakeRuntime())
+    monkeypatch.setattr(
+        "harness.main.build_runtime", lambda config, **kwargs: _FakeRuntime()
+    )
     monkeypatch.setattr("harness.main.build_llm", lambda config: None)
 
     result = CliRunner().invoke(cli, ["run", str(task), "--config", str(config)])
 
     assert result.exit_code == 1
     assert "action rejected by human-in-the-loop" in result.output
+
+
+def _hitl_task_and_config(tmp_path):
+    task = tmp_path / "task.yaml"
+    task.write_text("id: t1\nprompt: run dangerous\n", encoding="utf-8")
+    config = tmp_path / "harness.yaml"
+    config.write_text(
+        "llm:\n  mock: true\n"
+        "hitl:\n  enabled: true\n"
+        "  approval_timeout: 1\n"
+        "  dangerous_commands:\n    - hitl-pause\n",
+        encoding="utf-8",
+    )
+    return task, config
+
+
+def test_cli_run_hitl_interactive_approve(tmp_path, monkeypatch):
+    task, config = _hitl_task_and_config(tmp_path)
+    dangerous = json.dumps(
+        {"tool": "run_shell", "params": {"command": "echo hitl-pause"}}
+    )
+    monkeypatch.setattr("harness.main.build_llm", lambda cfg: MockLLM([dangerous, DONE]))
+
+    result = CliRunner().invoke(
+        cli, ["run", str(task), "--config", str(config)], input="y\n"
+    )
+
+    assert result.exit_code == 0
+    assert "COMPLETED" in result.output
+
+
+def test_cli_run_hitl_interactive_reject(tmp_path, monkeypatch):
+    task, config = _hitl_task_and_config(tmp_path)
+    dangerous = json.dumps(
+        {"tool": "run_shell", "params": {"command": "echo hitl-pause"}}
+    )
+    monkeypatch.setattr("harness.main.build_llm", lambda cfg: MockLLM([dangerous]))
+
+    result = CliRunner().invoke(
+        cli, ["run", str(task), "--config", str(config)], input="n\n"
+    )
+
+    assert result.exit_code == 1
+    assert "PAUSED" in result.output
+    assert "hitl-pause" in result.output

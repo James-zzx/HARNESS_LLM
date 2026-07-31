@@ -79,6 +79,12 @@ def _normalized_target_is_dangerous(target: str) -> bool:
     return False
 
 
+# Shell operators that terminate or glue command segments. A token carrying one of
+# these (e.g. `/tmp/../..;` or `/tmp/../..&&echo`) must be split on the operator
+# first so each operand/path segment is still checked for root/system resolution.
+_RM_OPERATOR_SPLIT = re.compile(r"[;|&<>`()$]")
+
+
 def _rm_targets_root_or_system(command: str) -> bool:
     """True if an `rm` invocation targets a path normalizing to root/system dir."""
     if not re.search(r"\brm\b", command, re.IGNORECASE):
@@ -90,7 +96,10 @@ def _rm_targets_root_or_system(command: str) -> bool:
         for following in tokens[index + 1 :]:
             if following == "-" or following.startswith("-"):
                 continue
-            if re.search(r"[;|&<>()`$]", following):
+            if _RM_OPERATOR_SPLIT.search(following):
+                segments = _RM_OPERATOR_SPLIT.split(following)
+                if any(_normalized_target_is_dangerous(segment) for segment in segments if segment):
+                    return True
                 break
             if _normalized_target_is_dangerous(following):
                 return True

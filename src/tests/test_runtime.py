@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 import time
@@ -34,6 +35,29 @@ def _config(tmp_path):
         ),
     )
     return config, work
+
+
+def _hitl_config(tmp_path):
+    work = tmp_path / "workspace"
+    work.mkdir()
+    config = HarnessConfig(
+        sandbox=SandboxConfig(
+            enabled=True,
+            allowed_dirs=[str(work)],
+            blocked_commands=["rm -rf /", "shutdown", "format", "dd if="],
+            network="deny",
+        ),
+        hitl=HITLConfig(
+            enabled=True,
+            dangerous_commands=["hitl-pause"],
+            approval_timeout=1,
+        ),
+    )
+    return config, work
+
+
+def _dangerous_json():
+    return json.dumps({"tool": "run_shell", "params": {"command": "echo hitl-pause"}})
 
 
 def test_runtime_sandbox_blocks_dangerous_command(tmp_path):
@@ -181,3 +205,36 @@ def test_build_orchestrator_per_task_work_dir(tmp_path):
     assert result.status == "COMPLETED"
     assert (task_dir / "note.txt").read_text(encoding="utf-8") == "iso"
     assert not (work / "note.txt").exists()
+
+
+def test_runtime_hitl_interactive_stdin_approve(tmp_path):
+    config, work = _hitl_config(tmp_path)
+    runtime = build_runtime(config, work_dir=work, hitl_input_stream=io.StringIO("y\n"))
+    orch = runtime.build_orchestrator(
+        llm=MockLLM([_dangerous_json(), json.dumps({"done": True})])
+    )
+    result = orch.run(Task(id="rt-cli-approve", prompt="do the task"))
+
+    assert result.status == "COMPLETED"
+    assert runtime.hitl_gate.state == "RUNNING"
+
+
+def test_runtime_hitl_interactive_stdin_reject(tmp_path):
+    config, work = _hitl_config(tmp_path)
+    runtime = build_runtime(config, work_dir=work, hitl_input_stream=io.StringIO("n\n"))
+    orch = runtime.build_orchestrator(llm=MockLLM([_dangerous_json()]))
+    result = orch.run(Task(id="rt-cli-reject", prompt="do the task"))
+
+    assert result.status == "PAUSED"
+    assert runtime.hitl_gate.state == "REJECTED"
+    assert "echo hitl-pause" in result.feedback
+
+
+def test_runtime_hitl_interactive_stdin_timeout(tmp_path):
+    config, work = _hitl_config(tmp_path)
+    runtime = build_runtime(config, work_dir=work, hitl_input_stream=io.StringIO("t\n"))
+    orch = runtime.build_orchestrator(llm=MockLLM([_dangerous_json()]))
+    result = orch.run(Task(id="rt-cli-timeout", prompt="do the task"))
+
+    assert result.status == "PAUSED"
+    assert runtime.hitl_gate.state == "TIMEOUT"
