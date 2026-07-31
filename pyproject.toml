@@ -17,6 +17,9 @@ dependencies = [
     "httpx",
 ]
 
+[project.scripts]
+harness = "harness.main:cli"
+
 [dependency-groups]
 dev = [
     "pytest",
