@@ -72,6 +72,8 @@ class EditFileTool(_PathTool):
             path = self._resolve(params.get("path", ""))
             old_string = params.get("old_string", "")
             new_string = params.get("new_string", "")
+            if not old_string:
+                return ToolResult(success=False, error="old_string must not be empty")
             text = path.read_text(encoding="utf-8")
             if old_string not in text:
                 return ToolResult(

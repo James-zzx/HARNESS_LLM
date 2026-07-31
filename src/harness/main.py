@@ -38,6 +38,8 @@ def run_command(task_path: str, config_path, verbose: bool, timeout) -> None:
     except ConfigError as exc:
         _error(f"failed to load config: {exc}")
     if timeout is not None:
+        if timeout <= 0:
+            _error(f"--timeout must be a positive number of seconds, got {timeout}")
         task.timeout = timeout
     setup_logging(
         level="DEBUG" if verbose else config.logging.level,

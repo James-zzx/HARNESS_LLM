@@ -15,6 +15,18 @@ def _permissive_check(tool_name: str, params: Dict[str, Any]) -> bool:
     return True
 
 
+def _make_tool_executor(
+    config: HarnessConfig, sandbox: Sandbox, work_dir_path: Path
+) -> ToolExecutor:
+    sandbox_check = sandbox.build_check() if config.sandbox.enabled else _permissive_check
+    return ToolExecutor(
+        work_dir=str(work_dir_path),
+        sandbox_check=sandbox_check,
+        sandbox=sandbox if config.sandbox.enabled else None,
+        shell_timeout=config.sandbox.timeout,
+    )
+
+
 def _never_pause(tool_name: str, params: dict) -> bool:
     return False
 
@@ -39,6 +51,7 @@ class Runtime:
         self,
         llm,
         *,
+        work_dir: Optional[Union[str, Path]] = None,
         hitl_checker: Optional[Callable[[str, dict], bool]] = None,
         approval: Optional[Callable[[str, dict], bool]] = None,
         **kwargs,
@@ -49,10 +62,14 @@ class Runtime:
         kwargs.setdefault(
             "approval", approval if approval is not None else self.default_approval
         )
+        orch_work_dir = self.work_dir if work_dir is None else Path(work_dir).resolve()
+        tool_executor = self.tool_executor
+        if orch_work_dir != self.work_dir:
+            tool_executor = _make_tool_executor(self.config, self.sandbox, orch_work_dir)
         return Orchestrator(
             llm=llm,
-            work_dir=str(self.work_dir),
-            tool_executor=self.tool_executor,
+            work_dir=str(orch_work_dir),
+            tool_executor=tool_executor,
             **kwargs,
         )
 
@@ -77,7 +94,6 @@ def build_runtime(config: HarnessConfig, work_dir: Union[str, Path] = ".") -> Ru
         memory_limit=config.sandbox.max_memory_mb * _MB,
         network=config.sandbox.network == "allow",
     )
-    sandbox_check = sandbox.build_check() if config.sandbox.enabled else _permissive_check
 
     if config.hitl.enabled:
         hitl_gate = HITLGate(
@@ -91,12 +107,7 @@ def build_runtime(config: HarnessConfig, work_dir: Union[str, Path] = ".") -> Ru
         default_hitl_checker = _never_pause
         default_approval = _always_approve
 
-    tool_executor = ToolExecutor(
-        work_dir=str(work_dir_path),
-        sandbox_check=sandbox_check,
-        sandbox=sandbox if config.sandbox.enabled else None,
-        shell_timeout=config.sandbox.timeout,
-    )
+    tool_executor = _make_tool_executor(config, sandbox, work_dir_path)
 
     return Runtime(
         config=config,

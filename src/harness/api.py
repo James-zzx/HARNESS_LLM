@@ -1,3 +1,5 @@
+import dataclasses
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
@@ -45,14 +47,22 @@ class TaskManager:
                 raise TaskError(f"task already exists: {task.id}")
             self._records[task.id] = TaskRecord(task=task)
 
+    def _record(self, task_id: str) -> TaskRecord:
+        record = self._records.get(task_id)
+        if record is None:
+            raise TaskNotFoundError(f"task not found: {task_id}")
+        return record
+
     def snapshot(self, task_id: str) -> dict:
         with self._lock:
-            record = self._records.get(task_id)
-            if record is None:
-                raise TaskNotFoundError(f"task not found: {task_id}")
+            record = self._record(task_id)
+            status = record.status
+            gate = record.hitl_gate
+            if gate is not None and gate.state == "PAUSED":
+                status = TaskStatus.PAUSED
             return {
                 "task_id": record.task.id,
-                "status": record.status.value,
+                "status": status.value,
                 "iterations": record.iterations,
                 "error": record.error,
                 "logs": list(record.logs),
@@ -60,41 +70,38 @@ class TaskManager:
 
     def get_gate(self, task_id: str) -> Optional[HITLGate]:
         with self._lock:
-            record = self._records.get(task_id)
-            if record is None:
-                raise TaskNotFoundError(f"task not found: {task_id}")
-            return record.hitl_gate
+            return self._record(task_id).hitl_gate
 
     def get_task(self, task_id: str) -> Task:
         with self._lock:
-            record = self._records.get(task_id)
-            if record is None:
-                raise TaskNotFoundError(f"task not found: {task_id}")
-            return record.task
+            return dataclasses.replace(self._record(task_id).task)
 
     def set_status(self, task_id: str, status: TaskStatus) -> None:
         with self._lock:
-            self._records[task_id].status = status
+            self._record(task_id).status = status
 
     def set_error(self, task_id: str, error: str) -> None:
         with self._lock:
-            self._records[task_id].error = error
+            self._record(task_id).error = error
 
     def set_iterations(self, task_id: str, iterations: int) -> None:
         with self._lock:
-            self._records[task_id].iterations = iterations
+            self._record(task_id).iterations = iterations
 
     def append_log(self, task_id: str, line: str) -> None:
         with self._lock:
-            self._records[task_id].logs.append(line)
+            self._record(task_id).logs.append(line)
 
     def attach_hitl_gate(self, task_id: str, gate: HITLGate) -> None:
         with self._lock:
-            self._records[task_id].hitl_gate = gate
+            self._record(task_id).hitl_gate = gate
 
 
 def _map_status(status: str) -> TaskStatus:
-    return _STATUS_MAP.get(status, TaskStatus.FAILED)
+    try:
+        return _STATUS_MAP[status]
+    except KeyError:
+        raise TaskError(f"unknown orchestrator status: {status}") from None
 
 
 def _default_runner() -> TaskRunner:
@@ -107,8 +114,12 @@ def _default_runner() -> TaskRunner:
 
     def run(task: Task, gate: HITLGate) -> RunResult:
         llm = build_llm(config)
+        task_work_dir = tempfile.mkdtemp(
+            prefix="harness-task-", dir=str(runtime.work_dir)
+        )
         orchestrator = runtime.build_orchestrator(
             llm=llm,
+            work_dir=task_work_dir,
             hitl_checker=gate.check,
             approval=gate.decide,
         )

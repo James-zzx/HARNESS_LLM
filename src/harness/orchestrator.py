@@ -227,16 +227,22 @@ class Orchestrator:
     def _parse_intent(content: str):
         text = content.strip()
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except json.JSONDecodeError:
-            pass
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+        if parsed is not None:
+            return None
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end > start:
             try:
-                return json.loads(text[start : end + 1])
+                candidate = json.loads(text[start : end + 1])
             except json.JSONDecodeError:
-                pass
+                return None
+            if isinstance(candidate, dict):
+                return candidate
         return None
 
     @staticmethod

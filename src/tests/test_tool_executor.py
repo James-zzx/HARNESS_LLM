@@ -135,6 +135,20 @@ def test_edit_file_missing_old_string(executor, work_dir):
     assert (work_dir / "doc.txt").read_text(encoding="utf-8") == "unchanged"
 
 
+def test_edit_file_rejects_empty_old_string(executor, work_dir):
+    (work_dir / "doc.txt").write_text("original", encoding="utf-8")
+
+    result = executor.execute(
+        {
+            "tool": "edit_file",
+            "params": {"path": "doc.txt", "old_string": "", "new_string": "x"},
+        }
+    )
+    assert result.success is False
+    assert "old_string" in result.error
+    assert (work_dir / "doc.txt").read_text(encoding="utf-8") == "original"
+
+
 def test_sandbox_check_can_deny(work_dir):
     denied = ToolExecutor(work_dir=work_dir, sandbox_check=lambda tool, params: False)
 

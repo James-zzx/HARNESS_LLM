@@ -105,3 +105,15 @@ def test_orchestrator_full_cycle(work_dir):
     assert (work_dir / "solution.txt").read_text(encoding="utf-8") == "right"
     messages = orch.memory.get_history()
     assert any(m.role == "tool" and "evaluation" in m.content for m in messages)
+
+
+def test_orchestrator_non_dict_intent_feeds_back_error(work_dir):
+    presets = [json.dumps(42), DONE]
+    orch = Orchestrator(llm=MockLLM(presets), work_dir=work_dir)
+
+    result = orch.run(Task(id="t6", prompt="reply with 42"))
+
+    assert result.status == "COMPLETED"
+    assert orch.state == "COMPLETED"
+    messages = orch.memory.get_history()
+    assert any(m.role == "tool" and "JSON object" in m.content for m in messages)

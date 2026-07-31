@@ -162,3 +162,22 @@ def test_runtime_run_shell_enforces_sandbox_timeout(tmp_path):
 
     assert result.success is False
     assert elapsed < 10
+
+
+def test_build_orchestrator_per_task_work_dir(tmp_path):
+    config, work = _config(tmp_path)
+    runtime = build_runtime(config, work_dir=work)
+    task_dir = work / "task-1"
+    presets = [
+        json.dumps(
+            {"tool": "write_file", "params": {"path": "note.txt", "content": "iso"}}
+        ),
+        json.dumps({"done": True}),
+    ]
+
+    orch = runtime.build_orchestrator(llm=MockLLM(presets), work_dir=str(task_dir))
+    result = orch.run(Task(id="rt-iso", prompt="write"))
+
+    assert result.status == "COMPLETED"
+    assert (task_dir / "note.txt").read_text(encoding="utf-8") == "iso"
+    assert not (work / "note.txt").exists()

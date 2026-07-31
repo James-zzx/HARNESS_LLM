@@ -57,3 +57,18 @@ def test_cli_missing_file():
     result = CliRunner().invoke(cli, ["run", "no-such-task.yaml"])
 
     assert result.exit_code != 0
+
+
+def test_cli_run_rejects_nonpositive_timeout(tmp_path):
+    task = tmp_path / "task.yaml"
+    task.write_text("id: t1\nprompt: write hello\n", encoding="utf-8")
+    config = tmp_path / "harness.yaml"
+    config.write_text("llm:\n  mock: true\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        cli, ["run", str(task), "--config", str(config), "--timeout", "0"]
+    )
+
+    assert result.exit_code != 0
+    assert "timeout" in result.output.lower()
+    assert "Traceback" not in result.output
