@@ -6,7 +6,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from harness.hitl import HITLGate
-from harness.orchestrator import Orchestrator, RunResult
+from harness.orchestrator import RunResult
 from harness.task import Task, TaskError, TaskParser, TaskStatus
 
 _STATUS_MAP = {
@@ -100,8 +100,10 @@ def _map_status(status: str) -> TaskStatus:
 def _default_runner() -> TaskRunner:
     from harness.config import load_config
     from harness.llm_adapter import DEFAULT_BASE_URL, LLMFactory
+    from harness.runtime import build_runtime
 
     config = load_config()
+    runtime = build_runtime(config)
 
     def run(task: Task, gate: HITLGate) -> RunResult:
         llm = LLMFactory(
@@ -111,7 +113,7 @@ def _default_runner() -> TaskRunner:
             timeout=config.llm.timeout,
             max_retries=config.llm.max_retries,
         ).create()
-        orchestrator = Orchestrator(
+        orchestrator = runtime.build_orchestrator(
             llm=llm,
             hitl_checker=gate.check,
             approval=gate.decide,
@@ -129,12 +131,19 @@ def create_app(
     manager = task_manager or TaskManager()
     run = runner or _default_runner()
 
+    default_runtime = None
+    if runner is None:
+        from harness.config import load_config
+        from harness.runtime import build_runtime
+
+        default_runtime = build_runtime(load_config())
+
     app = FastAPI(title="AI Agent Harness API")
 
     def _run_task(task_id: str) -> None:
         manager.set_status(task_id, TaskStatus.RUNNING)
         manager.append_log(task_id, "task started")
-        gate = HITLGate()
+        gate = default_runtime.new_gate() if default_runtime is not None else HITLGate()
         manager.attach_hitl_gate(task_id, gate)
         try:
             result = run(manager.get_task(task_id), gate)

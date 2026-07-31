@@ -103,6 +103,7 @@ class Orchestrator:
         hitl_checker: Callable[[str, dict], bool] = _always_safe,
         approval: Callable[[str, dict], bool] = _auto_approve,
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
+        tool_executor: Optional[ToolExecutor] = None,
     ):
         self._llm = llm
         self._work_dir = Path(work_dir).resolve()
@@ -110,7 +111,7 @@ class Orchestrator:
         self._hitl_checker = hitl_checker
         self._approval = approval
         self._max_context_tokens = max_context_tokens
-        self._tool_executor = ToolExecutor(work_dir=str(self._work_dir))
+        self._tool_executor = tool_executor or ToolExecutor(work_dir=str(self._work_dir))
         self._memory = ConversationMemory()
         self._state = INIT
         self._error: Optional[str] = None

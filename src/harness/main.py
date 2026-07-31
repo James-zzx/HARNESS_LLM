@@ -8,7 +8,7 @@ from harness.cli import build_llm, config_to_yaml, to_orchestrator_task
 from harness.config import ConfigError, HarnessConfig, load_config
 from harness.credential_store import build_cred_cli
 from harness.logger import setup_logging
-from harness.orchestrator import Orchestrator
+from harness.runtime import build_runtime
 from harness.task import TaskError, TaskParser
 
 
@@ -44,7 +44,9 @@ def run_command(task_path: str, config_path, verbose: bool, timeout) -> None:
         format=config.logging.format,
         file_path=config.logging.file_path,
     )
-    result = Orchestrator(llm=build_llm(config)).run(to_orchestrator_task(task))
+    result = build_runtime(config).build_orchestrator(llm=build_llm(config)).run(
+        to_orchestrator_task(task)
+    )
     click.echo(f"status={result.status} iterations={result.iterations} state={result.final_state}")
     if result.error:
         click.echo(f"error={result.error}", err=True)
