@@ -46,6 +46,7 @@ class Runtime:
     hitl_gate: HITLGate
     default_hitl_checker: Callable[[str, dict], bool]
     default_approval: Callable[[str, dict], bool]
+    feedback_provider: Optional[Callable[[], Optional[str]]] = None
 
     def build_orchestrator(
         self,
@@ -54,6 +55,7 @@ class Runtime:
         work_dir: Optional[Union[str, Path]] = None,
         hitl_checker: Optional[Callable[[str, dict], bool]] = None,
         approval: Optional[Callable[[str, dict], bool]] = None,
+        feedback_provider: Optional[Callable[[], Optional[str]]] = None,
         **kwargs,
     ) -> Orchestrator:
         kwargs.setdefault(
@@ -61,6 +63,12 @@ class Runtime:
         )
         kwargs.setdefault(
             "approval", approval if approval is not None else self.default_approval
+        )
+        kwargs.setdefault(
+            "feedback_provider",
+            feedback_provider
+            if feedback_provider is not None
+            else self.feedback_provider,
         )
         orch_work_dir = self.work_dir if work_dir is None else Path(work_dir).resolve()
         tool_executor = self.tool_executor
@@ -117,4 +125,5 @@ def build_runtime(config: HarnessConfig, work_dir: Union[str, Path] = ".") -> Ru
         hitl_gate=hitl_gate,
         default_hitl_checker=default_hitl_checker,
         default_approval=default_approval,
+        feedback_provider=hitl_gate.rejection_feedback,
     )

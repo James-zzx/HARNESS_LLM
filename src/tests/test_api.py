@@ -11,7 +11,7 @@ from harness.api import (
     _map_status,
     create_app,
 )
-from harness.hitl import HITLGate
+from harness.hitl import GuardrailEngine, HITLGate
 from harness.mock_llm import MockLLM
 from harness.orchestrator import RunResult, Task
 from harness.task import TaskError, TaskStatus
@@ -146,3 +146,35 @@ def test_snapshot_reports_paused_when_gate_paused():
 
     body = manager.snapshot("paused-1")
     assert body["status"] == "paused"
+
+
+def test_manager_snapshot_includes_rejection_feedback():
+    manager = TaskManager()
+    manager.create(Task(id="fb-1", prompt="dangerous"))
+    manager.set_status("fb-1", TaskStatus.PAUSED)
+    manager.set_feedback("fb-1", '{"error": "action rejected by human-in-the-loop"}')
+
+    body = manager.snapshot("fb-1")
+    assert body["status"] == "paused"
+    assert "action rejected by human-in-the-loop" in body["feedback"]
+
+
+def test_api_default_runner_wires_rejection_feedback(tmp_path, monkeypatch):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM(
+            [json.dumps({"tool": "run_shell", "params": {"command": "echo danger"}})]
+        )
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    gate = HITLGate(
+        engine=GuardrailEngine(regex_rules=[r"^echo danger"]),
+        decision_source=lambda: "rejected",
+    )
+    runner = _default_runner()
+    result = runner(Task(id="api-fb", prompt="dangerous"), gate)
+
+    assert result.status == "PAUSED"
+    assert result.feedback is not None
+    assert "echo danger" in result.feedback

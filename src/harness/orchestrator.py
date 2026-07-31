@@ -55,6 +55,7 @@ class RunResult:
     final_state: str
     iterations: int
     error: Optional[str] = None
+    feedback: Optional[str] = None
 
 
 class Evaluator(Protocol):
@@ -104,6 +105,7 @@ class Orchestrator:
         approval: Callable[[str, dict], bool] = _auto_approve,
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
         tool_executor: Optional[ToolExecutor] = None,
+        feedback_provider: Optional[Callable[[], Optional[str]]] = None,
     ):
         self._llm = llm
         self._work_dir = Path(work_dir).resolve()
@@ -112,6 +114,7 @@ class Orchestrator:
         self._approval = approval
         self._max_context_tokens = max_context_tokens
         self._tool_executor = tool_executor or ToolExecutor(work_dir=str(self._work_dir))
+        self._feedback_provider = feedback_provider
         self._memory = ConversationMemory()
         self._state = INIT
         self._error: Optional[str] = None
@@ -212,7 +215,17 @@ class Orchestrator:
                 approved = self._approval(tool_name, params)
                 if not approved:
                     logger.warning("orchestrator.paused", tool=tool_name, iterations=self._iterations)
-                    return RunResult(status=PAUSED, final_state=PAUSED, iterations=self._iterations)
+                    feedback = (
+                        self._feedback_provider()
+                        if self._feedback_provider is not None
+                        else None
+                    )
+                    return RunResult(
+                        status=PAUSED,
+                        final_state=PAUSED,
+                        iterations=self._iterations,
+                        feedback=feedback,
+                    )
 
             self._state = TOOL_EXEC
             result = self._tool_executor.execute(intent)

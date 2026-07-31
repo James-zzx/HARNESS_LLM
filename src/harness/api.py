@@ -34,6 +34,7 @@ class TaskRecord:
     iterations: int = 0
     logs: list[str] = field(default_factory=list)
     hitl_gate: Optional[HITLGate] = None
+    feedback: Optional[str] = None
 
 
 class TaskManager:
@@ -66,6 +67,7 @@ class TaskManager:
                 "iterations": record.iterations,
                 "error": record.error,
                 "logs": list(record.logs),
+                "feedback": record.feedback,
             }
 
     def get_gate(self, task_id: str) -> Optional[HITLGate]:
@@ -87,6 +89,10 @@ class TaskManager:
     def set_iterations(self, task_id: str, iterations: int) -> None:
         with self._lock:
             self._record(task_id).iterations = iterations
+
+    def set_feedback(self, task_id: str, feedback: str) -> None:
+        with self._lock:
+            self._record(task_id).feedback = feedback
 
     def append_log(self, task_id: str, line: str) -> None:
         with self._lock:
@@ -122,6 +128,7 @@ def _default_runner() -> TaskRunner:
             work_dir=task_work_dir,
             hitl_checker=gate.check,
             approval=gate.decide,
+            feedback_provider=gate.rejection_feedback,
         )
         return orchestrator.run(task)
 
@@ -162,6 +169,8 @@ def create_app(
         manager.set_iterations(task_id, getattr(result, "iterations", 0))
         if getattr(result, "error", None):
             manager.set_error(task_id, result.error)
+        if getattr(result, "feedback", None):
+            manager.set_feedback(task_id, result.feedback)
         manager.append_log(task_id, f"task finished with status {status.value}")
 
     def _resolve_gate(task_id: str) -> HITLGate:

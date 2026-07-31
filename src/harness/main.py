@@ -2,12 +2,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 import click
+import time
 import yaml
 
 from harness.cli import build_llm, config_to_yaml, to_orchestrator_task
 from harness.config import ConfigError, HarnessConfig, load_config
 from harness.credential_store import build_cred_cli
 from harness.logger import setup_logging
+from harness.open_design import ODDaemonError, ODNotFoundError, OpenDesignClient
 from harness.runtime import build_runtime
 from harness.task import TaskError, TaskParser
 
@@ -50,10 +52,59 @@ def run_command(task_path: str, config_path, verbose: bool, timeout) -> None:
         to_orchestrator_task(task)
     )
     click.echo(f"status={result.status} iterations={result.iterations} state={result.final_state}")
+    if result.feedback:
+        click.echo(result.feedback)
     if result.error:
         click.echo(f"error={result.error}", err=True)
     if result.status != "COMPLETED":
         raise click.exceptions.Exit(1)
+
+
+def start_open_design_daemon(client: OpenDesignClient) -> str:
+    """Start the Open Design daemon, verify it is healthy, and return its URL."""
+    client.start_daemon()
+    if not client.health_check():
+        raise ODDaemonError("Open Design daemon failed its health check")
+    return client.base_url
+
+
+def stop_open_design_daemon(client: OpenDesignClient) -> None:
+    client.stop_daemon()
+
+
+def _wait_until_interrupt() -> None:
+    while True:
+        time.sleep(3600)
+
+
+@cli.command("webui")
+@click.option("--config", "config_path", default=None, help="Path to a harness config file.")
+def webui_command(config_path) -> None:
+    """Start the Open Design daemon and print its web UI URL."""
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        _error(f"failed to load config: {exc}")
+    if not config.open_design.enabled:
+        click.echo(
+            "Open Design web UI is disabled: set open_design.enabled: true in "
+            "your harness config to enable it."
+        )
+        return
+    client = OpenDesignClient(config=config.open_design)
+    try:
+        url = start_open_design_daemon(client)
+    except (ODNotFoundError, ODDaemonError) as exc:
+        _error(str(exc))
+    click.echo(f"Open Design web UI available at: {url}")
+    click.echo("Press Ctrl+C to stop the daemon.")
+    try:
+        _wait_until_interrupt()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_open_design_daemon(client)
+    click.echo("Open Design daemon stopped.")
 
 
 @click.group("config")
