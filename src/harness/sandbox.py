@@ -1,5 +1,7 @@
 import ctypes
+import ntpath
 import os
+import posixpath
 import re
 import signal
 import subprocess
@@ -28,6 +30,71 @@ DEFAULT_BLOCKED_COMMANDS = (
     # --no-preserve-root is a deliberate root-deletion marker; never allow it with `rm`.
     r"\brm\b[\s\S]*--no-preserve-root",
 )
+
+# `..`-traversal is handled functionally (regexes can't count components vs. `..`):
+# any `rm` target whose lexical normalization lands on a root or system directory is
+# blocked, e.g. `rm -rf /tmp/../..` (-> `/`) or `rm -rf /tmp/../../Windows`.
+_SYSTEM_DIR_NAMES = (
+    "etc",
+    "usr",
+    "bin",
+    "sbin",
+    "lib",
+    "boot",
+    "dev",
+    "proc",
+    "sys",
+    "Windows",
+    "Program Files",
+    "ProgramData",
+    "System32",
+    "System",
+    "Users",
+    "Windows.old",
+)
+
+
+def _normalized_target_is_dangerous(target: str) -> bool:
+    """True when an absolute target lexically normalizes to root or a system dir."""
+    raw = target.strip().strip("'\"")
+    if not raw:
+        return False
+    if raw.startswith(("//", "\\\\")) or (len(raw) >= 2 and raw[1] == ":"):
+        norm = ntpath.normpath(raw)
+        drive, rest = ntpath.splitdrive(norm)
+        if rest in ("\\", "/") and drive:
+            return True
+        if drive and not rest:
+            return True
+        if not rest:
+            return False
+        names = rest.replace("\\", "/").strip("/").split("/")
+        return names and names[0].lower() in _SYSTEM_DIR_NAMES
+    if raw.startswith(("/", "\\")):
+        norm = posixpath.normpath(raw)
+        if norm == "/":
+            return True
+        names = norm.strip("/").split("/")
+        return names and names[0].lower() in _SYSTEM_DIR_NAMES
+    return False
+
+
+def _rm_targets_root_or_system(command: str) -> bool:
+    """True if an `rm` invocation targets a path normalizing to root/system dir."""
+    if not re.search(r"\brm\b", command, re.IGNORECASE):
+        return False
+    tokens = command.split()
+    for index, token in enumerate(tokens):
+        if not re.fullmatch(r"rm", token, re.IGNORECASE):
+            continue
+        for following in tokens[index + 1 :]:
+            if following == "-" or following.startswith("-"):
+                continue
+            if re.search(r"[;|&<>()`$]", following):
+                break
+            if _normalized_target_is_dangerous(following):
+                return True
+    return False
 
 _PATH_TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir"})
 
@@ -145,6 +212,8 @@ class Sandbox:
         for pattern in self.blocked_commands:
             if re.search(pattern, command, re.IGNORECASE):
                 return False
+        if _rm_targets_root_or_system(command):
+            return False
         return True
 
     def check_network(self) -> bool:

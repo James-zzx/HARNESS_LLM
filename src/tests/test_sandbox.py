@@ -83,6 +83,19 @@ def test_sandbox_blocks_compound_and_system_dir_commands(tmp_path):
     assert sb.check_command("echo done; echo hi") is True
 
 
+def test_sandbox_blocks_path_traversal_to_root(tmp_path):
+    sb, _ = _sandbox(tmp_path)
+
+    assert sb.check_command("rm -rf /tmp/../..") is False
+    assert sb.check_command("rm -rf /tmp/../../../") is False
+    assert sb.check_command("rm -rf /a/b/../../..") is False
+    assert sb.check_command("rm -rf /tmp/../etc/passwd") is False
+    assert sb.check_command("rm -rf C:\\Users\\..\\..") is False
+
+    assert sb.check_command("rm -rf /tmp/x") is True
+    assert sb.check_command("rm -rf /tmp/../x") is True
+
+
 def test_sandbox_timeout(tmp_path):
     sb, _ = _sandbox(tmp_path, timeout=1)
 

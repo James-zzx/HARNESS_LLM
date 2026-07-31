@@ -5,7 +5,7 @@
 - **Python**: 3.11+
 - **发行包**: `harness-llm`（PyPI）/ 镜像 `harness`（Docker）
 - **CLI**: `harness`（`python -m harness`）
-- **命令**: `run` / `cred` / `config` / `init`
+- **命令**: `run` / `webui` / `cred` / `config` / `init`
 - **接口**: CLI + FastAPI REST API + Open Design WebUI
 
 ## 快速开始
@@ -48,7 +48,7 @@ python -m harness run task.yaml
 
 ### 初始化项目
 
-在当前目录生成一份带注释默认值的 `harness.yaml`：
+在当前目录生成一份纯默认值（无注释）的 `harness.yaml`（带注释的可配置示例见 `examples/config.yaml`）：
 
 ```bash
 python -m harness init
@@ -72,6 +72,7 @@ Commands:
   cred    Manage credentials stored securely in the OS keyring.
   init    Create a default harness.yaml in the current directory.
   run     Run a task definition (YAML) through the harness.
+  webui   Start the Open Design daemon and print its web UI URL.
 ```
 
 ### `run` — 运行任务
@@ -90,6 +91,8 @@ python -m harness run <task.yaml> [--config PATH] [--verbose] [--timeout SECONDS
 ```
 status=COMPLETED iterations=3 state=COMPLETED
 ```
+
+任务通过真实的沙箱与 HITL 执行（`build_runtime` 接线）：`sandbox.blocked_commands` 命中的命令被拒绝执行，`hitl.dangerous_commands` 命中的命令触发人工审批并暂停任务，`run_shell` 受 `sandbox.timeout` 限制、超时会被强制终止。
 
 ### `cred` — 凭据管理
 
@@ -120,7 +123,15 @@ python -m harness config show [--config PATH]
 python -m harness init
 ```
 
-若当前目录已存在 `harness.yaml` 会报错，避免覆盖。
+生成纯默认值（无注释）的 `harness.yaml`；带注释的可配置示例见 [examples/config.yaml](examples/config.yaml)。若当前目录已存在 `harness.yaml` 会报错，避免覆盖。
+
+### `webui` — 启动 Open Design 面板
+
+```bash
+python -m harness webui [--config PATH]
+```
+
+读取配置：`open_design.enabled: true` 时启动 `od` 守护进程并打印 Web UI 地址，`Ctrl+C` 停止并回收守护进程；未启用时提示设置 `open_design.enabled: true` 并以退出码 0 返回。详见「Open Design WebUI（可选）」。
 
 ## 配置说明
 
@@ -210,11 +221,11 @@ export HARNESS_SANDBOX_NETWORK=allow
 2. **规则引擎层（Guardrail）**：`dangerous_commands` 子串规则 + 可配置正则规则，对工具调用（如 `run_shell`）做确定性检测。
 3. **HITL 状态机层**：危险命令触发 `PAUSED`，经 CLI 阻塞输入（`y/n/t`）或 REST/WebUI 外部决策批准/拒绝/超时，拒绝时构造反馈消息回灌给 LLM 要求换方案。
 
-所有护栏逻辑为确定性代码，可用 MockLLM 离线单测验证（如 `GuardrailEngine().check("rm -rf /") → True`）。
+以上三层已通过 `build_runtime(config)` 接入生产执行路径：`harness run` 与 REST API 的任务均构造真实的 `Sandbox` + `HITLGate` 执行（不再是 library-only 组件），沙箱拒绝的命令不会被执行，HITL 拒绝会暂停任务并把反馈回灌给 LLM。所有护栏逻辑为确定性代码，可用 MockLLM 离线单测验证（如 `GuardrailEngine().check("rm -rf /") → True`）。
 
 ### LLM 适配与离线测试
 
-`LLMClient` 抽象接口定义 `chat(messages) → Response`；`OpenAIClient` 走真实 OpenAI 兼容 `/chat/completions` 端点；`MockLLM(preset_responses)` 循环返回预设响应，无网络依赖。`LLMFactory` 依据 `llm.mock` 选择实现。测试基座 `BaseHarnessTest` 提供 mock_llm / config / orchestrator 等 fixture。
+`LLMClient` 抽象接口定义 `chat(messages) → Response`；`OpenAIClient` 走真实 OpenAI 兼容 `/chat/completions` 端点；`MockLLM(preset_responses)` 循环返回预设响应，无网络依赖。`LLMFactory` 依据 `llm.mock` 选择实现；`build_llm(config)` 在非 mock 模式通过凭据存储（后端见 `credential.backend`）解析 `credential_ref` 注入 API key。测试基座 `BaseHarnessTest` 提供 `mock_llm` fixture（config / orchestrator 等由具体测试自行装配）。
 
 ### 日志与追踪
 
@@ -266,7 +277,7 @@ python -m pip install --group dev -e .   # 安装包 + dev 依赖（pytest / pyt
 ### 运行测试
 
 ```bash
-python -m pytest src/tests/                # 全部测试（当前 99 个，全部通过）
+python -m pytest src/tests/                # 全部测试（当前 140 个，全部通过）
 python -m pytest --cov=harness src/tests/  # 覆盖率
 python -m ruff check src/                  # Lint
 ```
@@ -302,6 +313,8 @@ python -m uvicorn harness.api:app
 | `GET /api/tasks/{id}/logs` | 获取任务日志 |
 | `POST /api/hitl/{task_id}/approve` | 批准 HITL 暂停请求 |
 | `POST /api/hitl/{task_id}/reject` | 拒绝 HITL 暂停请求 |
+
+API 任务默认走与 CLI 相同的真实运行时（`build_runtime` + 沙箱 + HITL），凭据通过 `build_llm` 按 `config.credential.backend` 解析；`llm.mock: true` 时离线运行，不触碰凭据存储。每个任务使用独立的 `harness-task-*` 工作目录，互不干扰。
 
 ### Open Design WebUI（可选）
 

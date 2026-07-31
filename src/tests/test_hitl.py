@@ -51,6 +51,22 @@ def test_guardrail_allows_safe_command():
     assert engine.check({"tool": "write_file", "params": {"path": "x.txt", "content": "rm -rf /"}}) is False
 
 
+def test_guardrail_empty_list_disables_static_rules():
+    engine = GuardrailEngine(dangerous_commands=[])
+    assert engine.check({"tool": "run_shell", "params": {"command": "rm -rf /"}}) is False
+    assert engine.check(SAFE_ACTION) is False
+
+
+def test_guardrail_none_uses_defaults():
+    assert GuardrailEngine().check(DANGEROUS_ACTION) is True
+
+
+def test_guardrail_empty_list_keeps_regex_rules():
+    engine = GuardrailEngine(dangerous_commands=[], regex_rules=[r"kill\s+-9\s+\d+"])
+    assert engine.check({"tool": "run_shell", "params": {"command": "rm -rf /"}}) is False
+    assert engine.check({"tool": "run_shell", "params": {"command": "kill -9 1234"}}) is True
+
+
 def test_guardrail_regex_pattern():
     engine = GuardrailEngine(regex_rules=[r"kill\s+-9\s+\d+"])
     assert engine.check({"tool": "run_shell", "params": {"command": "kill -9 1234"}}) is True

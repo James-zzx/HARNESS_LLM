@@ -33,6 +33,26 @@ def test_key_not_found(store):
     assert store.get_key("test-service", "no-such-key") is None
 
 
+def test_set_reserved_key_name_raises(store):
+    with pytest.raises(ValueError):
+        store.set_key("test-service", "__keys__", "value")
+    assert store.list_keys("test-service") == []
+
+
+def test_delete_reserved_key_name_raises(store):
+    store.set_key("test-service", "api_key", "sk-abc123")
+    with pytest.raises(ValueError):
+        store.delete_key("test-service", "__keys__")
+    assert store.list_keys("test-service") == ["api_key"]
+
+
+def test_list_keys_degrades_on_corrupt_index(store):
+    store._backend.set_password("test-service", "__keys__", "not-json{")
+    assert store.list_keys("test-service") == []
+    store.set_key("test-service", "api_key", "sk-abc123")
+    assert store.list_keys("test-service") == ["api_key"]
+
+
 def test_env_backend_reads_environment(monkeypatch):
     monkeypatch.setenv("HARNESS_LLM_API_KEY", "sk-env-value")
     env_store = CredentialStore(backend=EnvBackend())

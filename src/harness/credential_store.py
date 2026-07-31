@@ -79,6 +79,8 @@ class CredentialStore:
         self._backend = backend if backend is not None else KeyringBackend()
 
     def set_key(self, service, key, value):
+        if key == self._INDEX_KEY:
+            raise ValueError(f"'{self._INDEX_KEY}' is a reserved key name")
         self._backend.set_password(service, key, value)
         keys = self.list_keys(service)
         if key not in keys:
@@ -91,6 +93,8 @@ class CredentialStore:
         return self._backend.get_password(service, key)
 
     def delete_key(self, service, key):
+        if key == self._INDEX_KEY:
+            raise ValueError(f"'{self._INDEX_KEY}' is a reserved key name")
         self._backend.delete_password(service, key)
         keys = self.list_keys(service)
         if key in keys:
@@ -104,7 +108,11 @@ class CredentialStore:
         raw = self._backend.get_password(service, self._INDEX_KEY)
         if not raw:
             return []
-        return json.loads(raw)
+        try:
+            keys = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+        return keys if isinstance(keys, list) else []
 
 
 def prompt_for_key(key_name):

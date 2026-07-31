@@ -21,9 +21,9 @@ class GuardrailEngine:
         dangerous_commands: Optional[list[str]] = None,
         regex_rules: Optional[list[str]] = None,
     ):
-        self._dangerous_commands = [
-            command.lower() for command in (dangerous_commands or DEFAULT_DANGEROUS_COMMANDS)
-        ]
+        if dangerous_commands is None:
+            dangerous_commands = DEFAULT_DANGEROUS_COMMANDS
+        self._dangerous_commands = [command.lower() for command in dangerous_commands]
         self._regex_rules = [re.compile(pattern) for pattern in (regex_rules or [])]
 
     @staticmethod
