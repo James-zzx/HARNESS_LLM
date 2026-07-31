@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from harness.task import Task, TaskError, TaskParser
+from harness.task import Task, TaskError, TaskParser, TaskStatus
 
 
 def test_parse_yaml_task(work_dir):
@@ -24,6 +24,7 @@ def test_parse_yaml_task(work_dir):
     assert task.eval_command == "make lint"
     assert task.max_iterations == 5
     assert task.timeout == 60
+    assert task.status is TaskStatus.PENDING
 
 
 def test_parse_json_task(work_dir):
@@ -46,7 +47,8 @@ def test_parse_json_task(work_dir):
     assert task.prompt == "Add unit tests for the parser module"
     assert task.eval_command is None
     assert task.max_iterations == 3
-    assert task.timeout == 300
+    assert task.timeout == 120
+    assert task.status is TaskStatus.PENDING
 
 
 def test_task_validation_missing_field(work_dir):

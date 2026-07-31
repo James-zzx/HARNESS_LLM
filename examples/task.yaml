@@ -5,4 +5,4 @@ prompt: |
   `python -m pytest` passes with no regressions.
 eval_command: python -m pytest
 max_iterations: 10
-timeout: 300
+timeout: 120

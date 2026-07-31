@@ -1,6 +1,7 @@
 import json
 import os
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Mapping, Optional
 
 import yaml
@@ -10,20 +11,27 @@ class TaskError(Exception):
     pass
 
 
+class TaskStatus(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    PAUSED = "paused"
+
+
 @dataclass
 class Task:
     id: str
     prompt: str
     eval_command: Optional[str] = None
     max_iterations: int = 10
-    timeout: int | float = 300
+    timeout: int | float = 120
+    status: TaskStatus = TaskStatus.PENDING
 
 
-def _require_str(data: Mapping[str, Any], name: str, required: bool) -> Optional[str]:
+def _require_str(data: Mapping[str, Any], name: str) -> str:
     if name not in data:
-        if required:
-            raise TaskError(f"Task definition missing required field: {name}")
-        return None
+        raise TaskError(f"Task definition missing required field: {name}")
     value = data[name]
     if not isinstance(value, str):
         raise TaskError(f"Task field {name} must be a string, got {value!r}")
@@ -41,7 +49,7 @@ def _require_int(data: Mapping[str, Any], name: str, minimum: int, default: int)
     return value
 
 
-def _require_number(data: Mapping[str, Any], name: str, default: int) -> int | float:
+def _require_number(data: Mapping[str, Any], name: str, default: int | float) -> int | float:
     if name not in data:
         return default
     value = data[name]
@@ -98,10 +106,13 @@ class TaskParser:
     def from_dict(cls, data: Mapping[str, Any]) -> Task:
         if not isinstance(data, Mapping):
             raise TaskError("Task definition must be a mapping")
+        eval_command = None
+        if "eval_command" in data:
+            eval_command = _require_str(data, "eval_command")
         return Task(
-            id=_require_str(data, "id", required=True),
-            prompt=_require_str(data, "prompt", required=True),
-            eval_command=_require_str(data, "eval_command", required=False),
-            max_iterations=_require_int(data, "max_iterations", minimum=1, default=10),
-            timeout=_require_number(data, "timeout", default=300),
+            id=_require_str(data, "id"),
+            prompt=_require_str(data, "prompt"),
+            eval_command=eval_command,
+            max_iterations=_require_int(data, "max_iterations", minimum=1, default=Task.max_iterations),
+            timeout=_require_number(data, "timeout", default=Task.timeout),
         )
