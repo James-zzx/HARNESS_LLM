@@ -1,0 +1,270 @@
+import ctypes
+import os
+import re
+import signal
+import subprocess
+import threading
+import time
+from ctypes import wintypes
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Union
+
+DEFAULT_BLOCKED_COMMANDS = (
+    r"\bshutdown\b",
+    r"\breboot\b",
+    r"\brm\b\s+(?:(?:-+[a-zA-Z]*[rf][a-zA-Z]*)\s*){1,6}\s*(?:/|/[*]|C:\\|C:/)(?:\s.*)?$",
+)
+
+_PATH_TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir"})
+
+_WINDOWS_QUERY_LIMITED_INFO = 0x1000
+_WINDOWS_SET_INFORMATION = 0x0200
+_WINDOWS_BELOW_NORMAL = 0x00004000
+
+
+@dataclass
+class RunResult:
+    returncode: Optional[int] = None
+    stdout: str = ""
+    stderr: str = ""
+    timed_out: bool = False
+    error: Optional[str] = None
+
+
+def _is_within(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+class Sandbox:
+    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs):
+        if config is not None and not isinstance(config, dict):
+            raise TypeError("config must be a dict or keyword arguments")
+        cfg = dict(config or {})
+        cfg.update(kwargs)
+        self.allowed_dirs: List[str] = [str(d) for d in cfg.get("allowed_dirs", [])]
+        self.blocked_dirs: List[str] = [str(d) for d in cfg.get("blocked_dirs", [])]
+        blocked_commands = cfg.get("blocked_commands", ())
+        if isinstance(blocked_commands, str):
+            blocked_commands = (blocked_commands,)
+        self.blocked_commands: Sequence[str] = DEFAULT_BLOCKED_COMMANDS + tuple(
+            blocked_commands
+        )
+        self.timeout: Optional[float] = cfg.get("timeout")
+        self.memory_limit: Optional[int] = cfg.get("memory_limit")
+        self.network: bool = bool(cfg.get("network", True))
+        self._processes: set = set()
+
+    def _resolve_candidates(self, path: Union[str, Path]) -> List[Path]:
+        candidate = Path(path)
+        if candidate.is_absolute():
+            return [candidate.resolve()]
+        return [(Path(allowed) / candidate).resolve() for allowed in self.allowed_dirs]
+
+    def is_allowed_path(self, path: Union[str, Path]) -> bool:
+        if not self.allowed_dirs or not path:
+            return False
+        blocked = [Path(b).resolve() for b in self.blocked_dirs]
+        allowed = [Path(a).resolve() for a in self.allowed_dirs]
+        for candidate in self._resolve_candidates(path):
+            if any(_is_within(candidate, b) for b in blocked):
+                continue
+            if any(_is_within(candidate, a) for a in allowed):
+                return True
+        return False
+
+    def check_command(self, command: Union[str, Sequence[str]]) -> bool:
+        if isinstance(command, (list, tuple)):
+            command = " ".join(str(c) for c in command)
+        command = command.strip()
+        if not command:
+            return False
+        for pattern in self.blocked_commands:
+            if re.search(pattern, command, re.IGNORECASE):
+                return False
+        return True
+
+    def check_network(self) -> bool:
+        return self.network
+
+    def build_check(self) -> Callable[[str, Dict[str, Any]], bool]:
+        def check(tool_name: str, params: Dict[str, Any]) -> bool:
+            if tool_name in _PATH_TOOLS:
+                return self.is_allowed_path(params.get("path", ""))
+            if tool_name == "run_shell":
+                return self.check_command(params.get("command", ""))
+            return True
+
+        return check
+
+    def run(
+        self,
+        command: Union[str, Sequence[str]],
+        timeout: Optional[float] = None,
+        shell: Optional[bool] = None,
+        network: bool = False,
+    ) -> RunResult:
+        if network and not self.check_network():
+            return RunResult(error="network access denied by sandbox")
+        if not self.check_command(command):
+            return RunResult(error="command blocked by sandbox blacklist")
+        if shell is None:
+            shell = isinstance(command, str)
+
+        popen_kwargs = dict(
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            start_new_session=True,
+        )
+        if shell:
+            proc = subprocess.Popen(command, shell=True, **popen_kwargs)
+        else:
+            proc = subprocess.Popen(list(command), shell=False, **popen_kwargs)
+
+        self._processes.add(proc)
+        try:
+            self._apply_process_limits(proc)
+            if self.memory_limit is not None:
+                self._start_memory_watcher(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                timed_out = False
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                self._terminate(proc)
+                try:
+                    stdout, stderr = proc.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self._terminate(proc)
+                    stdout, stderr = proc.communicate()
+            return RunResult(
+                returncode=proc.returncode,
+                stdout=stdout,
+                stderr=stderr,
+                timed_out=timed_out,
+            )
+        finally:
+            self._processes.discard(proc)
+
+    def active_processes(self) -> int:
+        return len(self._processes)
+
+    def close(self) -> None:
+        for proc in list(self._processes):
+            self._terminate(proc)
+            self._processes.discard(proc)
+
+    def __enter__(self) -> "Sandbox":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+    def _terminate(self, proc: subprocess.Popen) -> None:
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                    capture_output=True,
+                    timeout=5,
+                )
+            except Exception:
+                pass
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        else:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+    def _apply_process_limits(self, proc: subprocess.Popen) -> None:
+        if os.name == "nt":
+            try:
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                handle = kernel32.OpenProcess(_WINDOWS_SET_INFORMATION, False, proc.pid)
+                if handle:
+                    try:
+                        kernel32.SetPriorityClass(handle, _WINDOWS_BELOW_NORMAL)
+                    finally:
+                        kernel32.CloseHandle(handle)
+            except Exception:
+                pass
+        else:
+            try:
+                os.setpriority(os.PRIO_PROCESS, proc.pid, 10)
+            except (AttributeError, OSError):
+                pass
+
+    def _start_memory_watcher(self, proc: subprocess.Popen) -> None:
+        def watch() -> None:
+            while proc.poll() is None:
+                rss = self._sample_rss(proc.pid)
+                if rss is not None and rss > self.memory_limit:
+                    self._terminate(proc)
+                    return
+                time.sleep(0.05)
+
+        threading.Thread(target=watch, daemon=True, name="sandbox-memory-watch").start()
+
+    def _sample_rss(self, pid: int) -> Optional[int]:
+        try:
+            if os.name == "nt":
+                return self._sample_rss_windows(pid)
+            if os.name == "posix":
+                with open(f"/proc/{pid}/statm", encoding="utf-8") as handle:
+                    fields = handle.read().split()
+                if len(fields) >= 2:
+                    return int(fields[1]) * os.sysconf("SC_PAGESIZE")
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _sample_rss_windows(pid: int) -> Optional[int]:
+        class ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        try:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            psapi = ctypes.WinDLL("psapi", use_last_error=True)
+            handle = kernel32.OpenProcess(_WINDOWS_QUERY_LIMITED_INFO, False, pid)
+            if not handle:
+                return None
+            try:
+                counters = ProcessMemoryCounters()
+                counters.cb = ctypes.sizeof(ProcessMemoryCounters)
+                if psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+                    return int(counters.WorkingSetSize)
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return None
+        return None
+
+
+def sandbox_check_from(sandbox: Sandbox) -> Callable[[str, Dict[str, Any]], bool]:
+    return sandbox.build_check()
