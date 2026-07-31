@@ -52,7 +52,7 @@ def _resolve_optional(hint: Any) -> tuple[Any, bool]:
     return hint, False
 
 
-def _build_section(cls: Any, data: Any, prefix: str) -> Any:
+def _build_section(cls: Any, data: Any, prefix: str, base: Any = None) -> Any:
     if not isinstance(data, Mapping):
         raise ConfigError(f"Config section {prefix} must be a mapping")
     hints = get_type_hints(cls)
@@ -60,7 +60,7 @@ def _build_section(cls: Any, data: Any, prefix: str) -> Any:
     if unknown:
         raise ConfigError(f"Unknown config key(s) in {prefix}: {sorted(unknown)}")
     enums = getattr(cls, "_ENUMS", {})
-    kwargs = {}
+    kwargs = {name: getattr(base, name) for name in hints} if base is not None else {}
     for name, hint in hints.items():
         if name not in data:
             continue
@@ -71,6 +71,9 @@ def _build_section(cls: Any, data: Any, prefix: str) -> Any:
                 kwargs[name] = None
                 continue
             raise ConfigError(f"Config field {prefix}.{name} cannot be None")
+        if optional and isinstance(value, str) and not value.strip():
+            kwargs[name] = None
+            continue
         coerced = _coerce_value(f"{prefix}.{name}", value, inner)
         if name in enums and coerced not in enums[name]:
             raise ConfigError(
@@ -85,7 +88,7 @@ class LLMConfig:
     mock: bool = False
     model: str = "gpt-4o"
     base_url: Optional[str] = None
-    api_key_ref: Optional[str] = None
+    credential_ref: Optional[str] = None
     timeout: int = 120
     max_retries: int = 3
 
@@ -171,7 +174,9 @@ class HarnessConfig:
         kwargs = {}
         for name, section_cls in _SECTION_CLASSES.items():
             if name in data:
-                kwargs[name] = _build_section(section_cls, data[name], name)
+                kwargs[name] = _build_section(
+                    section_cls, data[name], name, base=getattr(self, name)
+                )
             else:
                 kwargs[name] = getattr(self, name)
         return HarnessConfig(**kwargs)

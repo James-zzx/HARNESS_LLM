@@ -39,7 +39,7 @@ def test_load_yaml_config(work_dir):
 def test_config_merge(work_dir):
     cfg_file = work_dir / "config.yaml"
     cfg_file.write_text(
-        "llm:\n  mock: false\n  model: gpt-4o\nlogging:\n  level: INFO\n",
+        "llm:\n  mock: false\n  model: gpt-4o-mini\n  timeout: 60\nlogging:\n  level: INFO\n",
         encoding="utf-8",
     )
 
@@ -47,16 +47,24 @@ def test_config_merge(work_dir):
         str(cfg_file),
         env={
             "HARNESS_LLM_MOCK": "true",
+            "HARNESS_LLM_BASE_URL": "",
+            "HARNESS_LLM_CREDENTIAL_REF": "harness/openai",
             "HARNESS_LOGGING_LEVEL": "ERROR",
             "HARNESS_API_KEY": "sk-test",
         },
     )
 
     assert cfg.llm.mock is True
+    assert cfg.llm.model == "gpt-4o-mini"
+    assert cfg.llm.timeout == 60
+    assert cfg.llm.base_url is None
+    assert cfg.llm.credential_ref == "harness/openai"
     assert cfg.logging.level == "ERROR"
 
     overridden = cfg.apply_overrides({"llm": {"mock": False}})
     assert overridden.llm.mock is False
+    assert overridden.llm.model == "gpt-4o-mini"
+    assert overridden.llm.timeout == 60
     assert overridden.logging.level == "ERROR"
 
 

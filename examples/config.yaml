@@ -7,7 +7,7 @@ llm:
   mock: true                 # true = MockLLM (offline), false = real provider
   model: gpt-4o
   base_url: null             # provider default when null
-  api_key_ref: harness/openai # credential reference "service/key", never a literal key
+  credential_ref: harness/openai # credential reference "service/key", never a literal key
   timeout: 120               # seconds per LLM call
   max_retries: 3
 
