@@ -1,0 +1,41 @@
+# Example harness configuration. Every key is optional and defaults are safe
+# to run without network access. Merge precedence: defaults < file < env < CLI.
+#
+# Environment variables use HARNESS_<SECTION>_<FIELD> (e.g. HARNESS_LLM_MOCK=true).
+
+llm:
+  mock: true                 # true = MockLLM (offline), false = real provider
+  model: gpt-4o
+  base_url: null             # provider default when null
+  api_key_ref: harness/openai # credential reference "service/key", never a literal key
+  timeout: 120               # seconds per LLM call
+  max_retries: 3
+
+sandbox:
+  enabled: true
+  timeout: 300               # max subprocess run time (seconds)
+  max_memory_mb: 1024
+  allowed_dirs: ["."]        # paths the agent may touch
+  blocked_dirs: []
+  blocked_commands: ["rm -rf /", "shutdown"]
+  network: deny              # allow | deny
+
+hitl:
+  enabled: true
+  dangerous_commands: ["rm -rf /", "shutdown", "format", "dd if="]
+  approval_timeout: 300      # seconds before auto-reject
+
+logging:
+  level: INFO                # DEBUG | INFO | WARNING | ERROR
+  format: console            # console | json
+  file_path: null            # JSON log file when set
+
+open_design:
+  enabled: false
+  port: 3000
+  data_dir: .open_design
+  daemon_url: null           # defaults to http://127.0.0.1:<port> when null
+
+credential:
+  service: harness
+  backend: keyring           # keyring | env
