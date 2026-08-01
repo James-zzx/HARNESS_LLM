@@ -1,5 +1,9 @@
 import json
+import threading
+import time
 
+from harness.llm_adapter import Response
+from harness.message_queue import MessageQueue
 from harness.mock_llm import MockLLM
 from harness.orchestrator import Orchestrator, Task
 
@@ -139,3 +143,127 @@ def test_orchestrator_rejection_feedback_in_result(work_dir):
     assert result.feedback is not None
     assert "run_shell" in result.feedback
     assert "echo danger" in result.feedback
+
+
+def test_orchestrator_user_input(work_dir):
+    queue = MessageQueue(task_id="t9-ui")
+    first_call_started = threading.Event()
+    message_pushed = threading.Event()
+    result_holder = {}
+
+    class GatedLLM(MockLLM):
+        def __init__(self):
+            super().__init__([""])
+            self._calls = 0
+
+        def chat(self, messages):
+            self._calls += 1
+            if self._calls == 1:
+                first_call_started.set()
+                assert message_pushed.wait(timeout=10)
+                return Response(content=_write("note.txt", "v1"))
+            if self._calls == 2:
+                user_text = " ".join(
+                    (m.content or "") for m in messages if m.role == "user"
+                )
+                if "改成另一种写法" in user_text:
+                    return Response(content=_write("note.txt", "v2"))
+                return Response(content=_write("note.txt", "v1b"))
+            return Response(content=DONE)
+
+    orch = Orchestrator(llm=GatedLLM(), work_dir=work_dir, message_queue=queue)
+
+    def _run():
+        result_holder["result"] = orch.run(Task(id="t9-ui", prompt="write note.txt"))
+
+    thread = threading.Thread(target=_run)
+    thread.start()
+    assert first_call_started.wait(timeout=10)
+    queue.push({"content": "改成另一种写法"})
+    message_pushed.set()
+    thread.join(timeout=10)
+
+    result = result_holder["result"]
+    assert result.status == "COMPLETED"
+    assert (work_dir / "note.txt").read_text(encoding="utf-8") == "v2"
+    history = orch.memory.get_history()
+    assert any(
+        m.role == "user" and "改成另一种写法" in m.content for m in history
+    )
+
+
+def test_orchestrator_user_input_timeout(work_dir):
+    queue = MessageQueue(task_id="t9-timeout")
+    queue.push({"content": "改成另一种写法"})
+    orch = Orchestrator(
+        llm=MockLLM([_write("t.txt", "ok"), DONE]),
+        work_dir=work_dir,
+        message_queue=queue,
+    )
+    start = time.monotonic()
+    result = orch.run(Task(id="t9-timeout", prompt="write t.txt", timeout=2))
+    elapsed = time.monotonic() - start
+
+    assert result.status == "COMPLETED"
+    assert (work_dir / "t.txt").read_text(encoding="utf-8") == "ok"
+    assert elapsed < 5.0
+
+
+def test_orchestrator_no_queue_backward_compat(work_dir):
+    orch = Orchestrator(llm=MockLLM([_write("bc.txt", "ok"), DONE]), work_dir=work_dir)
+    orch.interrupt()
+    result = orch.run(Task(id="t9-bc", prompt="write bc.txt"))
+
+    assert result.status == "COMPLETED"
+    assert orch.state == "COMPLETED"
+    assert (work_dir / "bc.txt").read_text(encoding="utf-8") == "ok"
+    user_msgs = [m for m in orch.memory.get_history() if m.role == "user"]
+    assert len(user_msgs) == 1
+    assert user_msgs[0].content == "write bc.txt"
+
+
+def test_orchestrator_interrupt(work_dir):
+    queue = MessageQueue(task_id="t9-int")
+    first_call_started = threading.Event()
+    release_first_call = threading.Event()
+    result_holder = {}
+
+    class GatedLLM(MockLLM):
+        def __init__(self):
+            super().__init__([""])
+            self._calls = 0
+
+        def chat(self, messages):
+            self._calls += 1
+            if self._calls == 1:
+                first_call_started.set()
+                assert release_first_call.wait(timeout=10)
+                return Response(content=_write("int.txt", "v1"))
+            return Response(content=DONE)
+
+    orch = Orchestrator(llm=GatedLLM(), work_dir=work_dir, message_queue=queue)
+
+    def _run():
+        result_holder["result"] = orch.run(Task(id="t9-int", prompt="write int.txt"))
+
+    thread = threading.Thread(target=_run)
+    thread.start()
+    assert first_call_started.wait(timeout=10)
+    orch.interrupt()
+    release_first_call.set()
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and orch.state != "USER_INPUT":
+        time.sleep(0.01)
+    assert orch.state == "USER_INPUT"
+
+    queue.push({"content": "resume"})
+    thread.join(timeout=10)
+
+    result = result_holder["result"]
+    assert result.status == "COMPLETED"
+    assert (work_dir / "int.txt").read_text(encoding="utf-8") == "v1"
+    assert any(
+        m.role == "user" and m.content == "resume"
+        for m in orch.memory.get_history()
+    )
