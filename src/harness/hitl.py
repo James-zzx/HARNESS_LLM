@@ -193,5 +193,11 @@ class HITLGate:
             self._machine.reject()
         return False
 
+    def approve(self) -> bool:
+        return self._machine.approve()
+
+    def reject(self) -> bool:
+        return self._machine.reject()
+
     def rejection_feedback(self) -> Optional[str]:
         return self._machine.rejection_feedback()
