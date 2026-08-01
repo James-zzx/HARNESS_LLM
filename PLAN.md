@@ -527,7 +527,7 @@ Phase 5 (分发)                                       │
 - [x] `AGENT_LOG.md` — 过程日志
 - [x] `README.md` — 项目文档
 - [x] `Dockerfile` — 容器分发
-- [ ] `.github/workflows/ci.yml` — CI 配置
+- [x] `.github/workflows/ci.yml` — CI 配置
 - [x] 所有测试通过 (`pytest`)
-- [ ] 最后一次 CI 执行为 pass 状态
+- [x] 最后一次 CI 执行为 pass 状态
 - [x] 仓库无真实凭据 (自查 .env, history, 配置)
