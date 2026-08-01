@@ -12,13 +12,14 @@ from harness.api import (
     create_app,
 )
 from harness.hitl import GuardrailEngine, HITLGate
+from harness.message_queue import MessageQueue
 from harness.mock_llm import MockLLM
 from harness.orchestrator import RunResult, Task
 from harness.task import TaskError, TaskStatus
 
 
 class _PauseRunner:
-    def __call__(self, task, gate):
+    def __call__(self, task, gate, message_queue=None, on_orchestrator=None):
         gate.check("run_shell", {"command": "rm -rf /"})
         return RunResult(status="PAUSED", final_state="PAUSED", iterations=0)
 
@@ -178,3 +179,128 @@ def test_api_default_runner_wires_rejection_feedback(tmp_path, monkeypatch):
     assert result.status == "PAUSED"
     assert result.feedback is not None
     assert "echo danger" in result.feedback
+
+
+class _QueueCapturingRunner:
+    def __init__(self):
+        self.seen = []
+
+    def __call__(self, task, gate, message_queue=None, on_orchestrator=None):
+        self.seen.append(message_queue)
+        return RunResult(status="COMPLETED", final_state="COMPLETED", iterations=1)
+
+
+class _StubOrchestrator:
+    def __init__(self):
+        self.interrupted = False
+
+    def interrupt(self):
+        self.interrupted = True
+
+
+def _client_with_manager():
+    manager = TaskManager()
+    app = create_app(task_manager=manager, runner=_PauseRunner())
+    return TestClient(app), manager
+
+
+def test_manager_creates_message_queue_per_task():
+    manager = TaskManager()
+    manager.create(Task(id="mq-1", prompt="hi"))
+    manager.create(Task(id="mq-2", prompt="hi"))
+    q1 = manager.get_message_queue("mq-1")
+    q2 = manager.get_message_queue("mq-2")
+    assert q1.task_id == "mq-1"
+    assert q2.task_id == "mq-2"
+    assert q1 is not q2
+    with pytest.raises(TaskNotFoundError):
+        manager.get_message_queue("does-not-exist")
+
+
+def test_api_post_message_pushes_to_queue_and_reads_back():
+    client, manager = _client_with_manager()
+    client.post("/api/tasks", json={"id": "api-msg", "prompt": "hi"})
+    r1 = client.post("/api/tasks/api-msg/message", json={"content": "hello"})
+    assert r1.status_code == 200
+    assert r1.json() == {"ok": True}
+    client.post("/api/tasks/api-msg/message", json={"content": "again"})
+    queue = manager.get_message_queue("api-msg")
+    assert queue.pop_all() == [
+        {"role": "user", "content": "hello"},
+        {"role": "user", "content": "again"},
+    ]
+    body = client.get("/api/tasks/api-msg/messages").json()
+    assert body["task_id"] == "api-msg"
+    assert body["messages"] == [
+        {"role": "user", "content": "hello"},
+        {"role": "user", "content": "again"},
+    ]
+
+
+def test_api_post_message_rejects_empty_content():
+    with _client() as client:
+        client.post("/api/tasks", json={"id": "api-empty", "prompt": "hi"})
+        for payload in ({"content": ""}, {"content": "   "}, {}):
+            response = client.post("/api/tasks/api-empty/message", json=payload)
+            assert response.status_code == 400, payload
+
+
+def test_api_missing_task_returns_404_for_message_endpoints():
+    with _client() as client:
+        assert (
+            client.post("/api/tasks/nope/message", json={"content": "hi"}).status_code
+            == 404
+        )
+        assert client.post("/api/tasks/nope/interrupt").status_code == 404
+        assert client.get("/api/tasks/nope/messages").status_code == 404
+
+
+def test_api_interrupt_sets_flag_and_interrupts_live_orchestrator():
+    client, manager = _client_with_manager()
+    client.post("/api/tasks", json={"id": "api-int", "prompt": "hi"})
+    stub = _StubOrchestrator()
+    manager.attach_orchestrator("api-int", stub)
+    response = client.post("/api/tasks/api-int/interrupt")
+    assert response.status_code == 200
+    assert response.json()["interrupt_requested"] is True
+    assert manager.get_interrupt_requested("api-int") is True
+    assert stub.interrupted is True
+
+
+def test_api_runner_receives_task_message_queue():
+    runner = _QueueCapturingRunner()
+    manager = TaskManager()
+    app = create_app(task_manager=manager, runner=runner)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-q", "prompt": "hi"})
+    assert runner.seen == [manager.get_message_queue("api-q")]
+
+
+def test_api_default_runner_wires_message_queue_to_orchestrator(tmp_path, monkeypatch):
+    seen = {}
+
+    class _InspectLLM(MockLLM):
+        def __init__(self):
+            super().__init__([json.dumps({"done": True})])
+
+        def chat(self, messages):
+            seen["contexts"] = [m.content for m in messages]
+            return super().chat(messages)
+
+    def fake_build_llm(config, credential_store=None):
+        return _InspectLLM()
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    queue = MessageQueue(task_id="api-wire")
+    queue.push({"role": "user", "content": "use python instead"})
+    runner = _default_runner()
+    result = runner(
+        Task(id="api-wire", prompt="write a file"),
+        HITLGate(),
+        queue,
+    )
+
+    assert result.status == "COMPLETED"
+    assert any("use python instead" in content for content in seen["contexts"])
