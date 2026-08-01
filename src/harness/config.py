@@ -112,7 +112,14 @@ class SandboxConfig:
 class HITLConfig:
     enabled: bool = True
     dangerous_commands: list[str] = field(
-        default_factory=lambda: ["rm -rf /", "shutdown", "format", "dd if="]
+        default_factory=lambda: [
+            "rm -rf",
+            "shutdown",
+            "format",
+            "dd if=",
+            "git push --force",
+            "DROP TABLE",
+        ]
     )
     approval_timeout: int = 300
 

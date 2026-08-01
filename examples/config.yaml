@@ -22,7 +22,7 @@ sandbox:
 
 hitl:
   enabled: true
-  dangerous_commands: ["rm -rf /", "shutdown", "format", "dd if="]
+  dangerous_commands: ["rm -rf", "shutdown", "format", "dd if=", "git push --force", "DROP TABLE"]
   approval_timeout: 300      # seconds before auto-reject
 
 logging:
