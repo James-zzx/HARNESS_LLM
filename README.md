@@ -277,12 +277,24 @@ python -m pip install --group dev -e .   # 安装包 + dev 依赖（pytest / pyt
 ### 运行测试
 
 ```bash
-python -m pytest src/tests/                # 全部测试（当前 140 个，全部通过）
+python -m pytest src/tests/                # 全部测试（当前 151 个，全部通过）
 python -m pytest --cov=harness src/tests/  # 覆盖率
 python -m ruff check src/                  # Lint
 ```
 
 所有核心逻辑（编排、工具执行、治理、HITL、评估、记忆、配置）均通过 MockLLM 离线验证，**不依赖网络或真实 LLM**，保证测试结果确定性。测试基座见 `src/tests/base.py`（`BaseHarnessTest`）。
+
+### 机制演示（离线、确定性）
+
+`examples/demo_mechanisms.py` 在仅使用 MockLLM（无真实 LLM、无网络）的条件下，确定性地复现三个核心机制行为，作为可重复运行的演示：
+
+```bash
+python examples/demo_mechanisms.py
+```
+
+1. **治理护栏拦截危险动作**：`GuardrailEngine` 识别并拦截 `rm -rf /` 等危险命令（无需 LLM，直接传入动作对象即可验证）。
+2. **反馈闭环**：注入一次失败 → 评估结果回灌 → agent 收到反馈并改变下一步动作 → 评估通过。
+3. **重点维度（治理）的确定性行为**：sandbox 命令黑名单 → guardrail 规则引擎 → HITL 状态机三层链条，拦截破坏性命令并暂停等待人工审批。
 
 ### 开发流程
 
