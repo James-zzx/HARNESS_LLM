@@ -89,28 +89,26 @@
 - **测试基座**: `BaseHarnessTest` 提供 mock_llm, config, orchestrator 等 fixture
 - **关键文件**: `src/harness/llm_adapter.py`, `src/harness/mock_llm.py`, `src/tests/base.py`
 
-### 模块 13: WebUI Dashboard & Open Design Integration (WebUI/Design Layer)
-- **方案**: **Harness 内建开箱即用的图形化 Dashboard**（方式 B，无需安装 Open Design 即可使用）；同时用 **Open Design 进行设计风格与界面排版布局的开发**，并以 Open Design 为可选预览/增强层
+### 模块 13: Open Design Integration（独立可选集成层，非 dashboard 运行所必需）
+- **定位**: **独立可选集成层**。内建 Dashboard（模块 14）**开箱即用，不依赖本模块、Open Design 安装或任何外部插件**；本模块仅当用户额外安装 Open Design 时提供预览/设计增强。
+- **方案**: 集成 Open Design (https://github.com/nexu-io/open-design) 作为可选的 WebUI 预览与设计层
 - **架构**:
-  - **内建 Dashboard（主要，开箱即用）**: `src/harness/webui/`（静态 HTML/CSS/JS），由 FastAPI 挂载，与 REST API 同源（127.0.0.1:8000），浏览器直接访问，无需安装任何额外软件
-  - **Open Design 集成（可选增强）**: 若用户安装了 Open Design，`harness webui` 命令可启动 `od` daemon（`--headless --no-open`），通过 HTTP API 通信，用其 WebUI 预览/承载；`OpenDesignClient` 封装 daemon REST API
-- **Dashboard 功能**:
-  - **任务操作面板**: 提交任务（表单或粘贴 YAML）、任务列表、状态徽章、日志实时刷新、HITL 审批按钮
-  - **运行时对话**: 任务运行中用户可打字给 agent 发消息，或点击"上传文件"按钮读取本地文件内容填入消息框后发送；agent 收到后调整动作（orchestrator 新增 USER_INPUT 状态）
-  - **连接状态**: 顶栏状态灯指示 API 连通性
+  - **零外部依赖保证**: \harness dashboard\ 启动的内建 Dashboard **仅依赖 Python 标准库 + FastAPI 自带依赖**，运行时完全不触碰 Open Design、不读取 \od\、不加载任何外部资源（无 CDN、无外部字体/脚本）
+  - **设计系统为构建期借鉴**: Dashboard 的视觉风格**在构建期借鉴** Open Design 的 \minimal\ 设计系统（色板/字体/排版规范已内嵌进 \webui/style.css\），运行时无需安装 Open Design 或引用其资源
+  - **Open Design 集成（可选）**: 若用户安装了 Open Design，\harness webui\ 命令可启动 \od\ daemon（\--headless --no-open\），通过 HTTP API 通信，用其 WebUI 预览/承载；\OpenDesignClient\ 封装 daemon REST API
 - **Open Design 集成功能（可选）**:
   - **任务界面**: Open Design WebUI 显示 Harness 任务状态、日志、评估结果（复用内建 dashboard 页面）
   - **HITL 审批面板**: 插件接收 HITL 暂停事件，提供批准/拒绝按钮
   - **Artifact 预览**: 使用 Open Design 的 iframe 沙箱预览 agent 生成的 HTML 产物
-- **所选设计系统与 skill**: 设计风格采用 Open Design 内置的 `minimal` 设计系统（基础排版、配色、组件），用于 dashboard 的视觉与排版布局开发；skill 为 `harness-dashboard`（自定义 skill，定义任务监控 + HITL 审批 + 运行时对话的界面规范）
+- **所选设计系统与 skill**: 设计风格借鉴 Open Design 内置的 \minimal\ 设计系统（基础排版、配色、组件），其视觉规范**内嵌进内建 dashboard 的 \webui/style.css\**（构建期借鉴，运行期零依赖）；skill 为 \harness-dashboard\（自定义 skill，定义任务监控 + HITL 审批 + 运行时对话的界面规范，用于 Open Design 环境下的增强预览）
 - **集成方式（Open Design 可选）**: 三种路径并存
-  - **HTTP API 客户端**（主要）: `OpenDesignClient` 封装对 daemon REST API 的调用
-  - **CLI 子进程包装器**（备用）: 通过 `od` 命令行执行操作
+  - **HTTP API 客户端**（主要）: \OpenDesignClient\ 封装对 daemon REST API 的调用
+  - **CLI 子进程包装器**（备用）: 通过 \od\ 命令行执行操作
   - **MCP stdio 客户端**（可选）: 通过 MCP 协议与 daemon 的 stdio 服务器通信
-- **关键文件**: `src/harness/webui/`, `src/harness/api.py`, `src/harness/open_design.py`, `src/harness/dashboard.py`, `src/tests/test_dashboard.py`, `src/tests/test_open_design.py`
-
+- **关键文件**: \src/harness/webui/\, \src/harness/api.py\, \src/harness/open_design.py\, \src/harness/dashboard.py\, \src/tests/test_dashboard.py\, \src/tests/test_open_design.py
 ### 模块 14: WebUI Dashboard & 运行时对话
 - **方案**: 内建开箱即用的图形化操作面板（方式 B），支持任务监控、HITL 审批、运行时对话介入
+- **零外部依赖（硬性约束）**: 安装并配置 harness 后，harness dashboard 即可运行完整的图形化客户端，**不依赖任何额外插件（含 Open Design）、无需外部 CDN/字体/脚本**；Open Design 仅作为可选的构建期设计参考与运行期预览增强
 - **Dashboard 界面**:
   - 单页应用（HTML/CSS/JS），与 REST API 同源（127.0.0.1:8000），由 FastAPI `StaticFiles` 挂载
   - 顶栏（标题 + "新任务"按钮 + 连接状态灯）、任务列表（状态徽章）、任务详情（元数据 + 日志区 + HITL 审批按钮 + 对话区）、新任务弹窗（表单或粘贴 YAML）
@@ -362,7 +360,7 @@ MessageQueue {
 | 模块 11: CI/CD | `docker build` 成功；`pytest` 在 CI 中通过 |
 | 模块 12: MockLLM | MockLLM 按预设顺序返回响应；替换真实 LLM 后所有测试仍通过 |
 | 模块 13: Open Design | `od` daemon 可被启动/停止；WebUI 可访问并显示任务状态（可选增强） |
-| 模块 14: Dashboard | `harness dashboard` 启动后浏览器可访问；任务提交/列表/日志/HITL 审批可用；运行时对话与文件上传可发送消息给 agent |
+| 模块 14: Dashboard | `harness dashboard` 启动后浏览器可访问；任务提交/列表/日志/HITL 审批可用；运行时对话与文件上传可发送消息给 agent |；**在未安装 Open Design 的干净环境中可完整运行（零外部依赖）** |
 
 ## 10. 风险与未决问题
 
