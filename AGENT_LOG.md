@@ -120,7 +120,7 @@
   - P6-03 `f9aec63` REST 对话端点：`POST /api/tasks/{id}/message` / `GET /api/tasks/{id}/messages` / `POST /api/tasks/{id}/interrupt`
   - P6-04 `60ed6bb` 零依赖 Dashboard 静态前端（任务列表/HITL 按钮/运行时对话/文件上传/连接状态灯，无 CDN、无外部引用，全部内联）
   - P6-05 `ce14561` `harness dashboard` CLI（`--host`/`--port`/`--config`）与 `config.webui` section（默认 `127.0.0.1:8000`）
-  - P6-06 `<commit>` README/PLAN/AGENT_LOG 文档收尾
+  - P6-06 `7a16d6e` README/PLAN/AGENT_LOG 文档收尾
   - 最终 180 测试通过，ruff clean
 - **人工裁决**: Dashboard 硬性约束为开箱即用、零外部依赖（不依赖 Open Design、无 CDN/外部资源）；Open Design 保持可选增强（`harness webui`），未安装/未启用不影响 Dashboard 与全部 CLI/REST API 功能
 - **教训**: 把"零外部依赖"这类非功能性约束转成可回归的确定性断言——`test_dashboard_no_external_refs` 校验 index.html 无 `http(s)://` 外部资源引用，避免前端后续引入 CDN 而不自知

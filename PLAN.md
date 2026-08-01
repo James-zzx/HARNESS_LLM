@@ -638,6 +638,7 @@ Phase 5 (分发)                                       │
   - [x] 手动 `python -m harness dashboard` 启动后浏览器访问 URL
 
 ### P6-06: README 与文档收尾
+- **状态**: ✅ 已完成 (commit: 7a16d6e)
 - **依赖**: P6-05
 - **并行**: —
 - **复杂度**: S
