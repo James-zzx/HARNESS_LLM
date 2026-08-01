@@ -2,8 +2,7 @@ from dataclasses import asdict
 
 import yaml
 
-from harness.credential_store import CredentialStore
-from harness.llm_adapter import DEFAULT_BASE_URL, LLMFactory
+from harness.llm_adapter import build_llm as build_llm
 from harness.orchestrator import Task as OrchestratorTask
 
 _SENSITIVE_TERMS = ("api_key", "credential_ref", "secret", "password", "token")
@@ -42,19 +41,3 @@ def to_orchestrator_task(task) -> OrchestratorTask:
         max_iterations=task.max_iterations,
         timeout=task.timeout,
     )
-
-
-def build_llm(config):
-    api_key = ""
-    credential_ref = config.llm.credential_ref
-    if credential_ref and "/" in credential_ref:
-        service, _, key = credential_ref.partition("/")
-        api_key = CredentialStore().get_key(service, key) or ""
-    return LLMFactory(
-        mock=config.llm.mock,
-        model=config.llm.model,
-        base_url=config.llm.base_url or DEFAULT_BASE_URL,
-        api_key=api_key,
-        timeout=config.llm.timeout,
-        max_retries=config.llm.max_retries,
-    ).create()

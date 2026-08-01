@@ -1,5 +1,7 @@
 import io
 import json
+import threading
+import time
 
 import pytest
 
@@ -49,6 +51,22 @@ def test_guardrail_allows_safe_command():
     assert engine.check(SAFE_ACTION) is False
     assert engine.check({"tool": "run_shell", "params": {"command": "grep -r foo ."}}) is False
     assert engine.check({"tool": "write_file", "params": {"path": "x.txt", "content": "rm -rf /"}}) is False
+
+
+def test_guardrail_empty_list_disables_static_rules():
+    engine = GuardrailEngine(dangerous_commands=[])
+    assert engine.check({"tool": "run_shell", "params": {"command": "rm -rf /"}}) is False
+    assert engine.check(SAFE_ACTION) is False
+
+
+def test_guardrail_none_uses_defaults():
+    assert GuardrailEngine().check(DANGEROUS_ACTION) is True
+
+
+def test_guardrail_empty_list_keeps_regex_rules():
+    engine = GuardrailEngine(dangerous_commands=[], regex_rules=[r"kill\s+-9\s+\d+"])
+    assert engine.check({"tool": "run_shell", "params": {"command": "rm -rf /"}}) is False
+    assert engine.check({"tool": "run_shell", "params": {"command": "kill -9 1234"}}) is True
 
 
 def test_guardrail_regex_pattern():
@@ -107,6 +125,72 @@ def test_hitl_cli_decision():
         == "rejected"
     )
     assert sm2.state == "REJECTED"
+
+
+class _SilentStream:
+    """A read stream that stays open but never returns a line."""
+
+    def __init__(self):
+        self._release = threading.Event()
+
+    def readline(self):
+        self._release.wait()
+        return ""
+
+
+def _closed_stream():
+    stream = io.StringIO()
+    stream.close()
+    return stream
+
+
+def test_wait_for_decision_bounded_by_approval_timeout():
+    sm = HITLStateMachine(approval_timeout=0.2)
+    sm.pause(DANGEROUS_ACTION)
+    start = time.monotonic()
+    result = sm.wait_for_decision(
+        input_stream=_SilentStream(), output_stream=io.StringIO()
+    )
+    elapsed = time.monotonic() - start
+    assert result == "timeout"
+    assert sm.state == "TIMEOUT"
+    assert elapsed < 1.0
+
+
+def test_gate_decide_silent_stream_times_out_within_deadline():
+    gate = HITLGate(approval_timeout=0.2)
+    gate._decision_source = lambda: gate._machine.wait_for_decision(
+        input_stream=_SilentStream(), output_stream=io.StringIO()
+    )
+    gate.check("run_shell", {"command": "rm -rf /"})
+    start = time.monotonic()
+    result = gate.decide("run_shell", {"command": "rm -rf /"})
+    elapsed = time.monotonic() - start
+    assert result is False
+    assert gate.state == "TIMEOUT"
+    assert elapsed < 1.0
+
+
+def test_wait_for_decision_closed_stream_is_clean_timeout():
+    sm = HITLStateMachine(approval_timeout=5)
+    sm.pause(DANGEROUS_ACTION)
+    result = sm.wait_for_decision(
+        input_stream=_closed_stream(), output_stream=io.StringIO()
+    )
+    assert result == "timeout"
+    assert sm.state == "TIMEOUT"
+
+
+def test_gate_decide_closed_stream_no_unexpected_error():
+    gate = HITLGate(approval_timeout=5)
+    gate._decision_source = lambda: gate._machine.wait_for_decision(
+        input_stream=_closed_stream(), output_stream=io.StringIO()
+    )
+    gate.check("run_shell", {"command": "rm -rf /"})
+    result = gate.decide("run_shell", {"command": "rm -rf /"})
+    assert result is False
+    assert gate.state == "TIMEOUT"
+    assert "unexpected error" not in gate.rejection_feedback().lower()
 
 
 def _stdin_gate(choice):

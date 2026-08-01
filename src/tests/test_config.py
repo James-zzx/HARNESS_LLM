@@ -3,8 +3,8 @@ import pytest
 from harness.config import ConfigError, load_config
 
 
-def test_load_default_config(work_dir):
-    cfg = load_config(str(work_dir / "missing.yaml"))
+def test_load_default_config():
+    cfg = load_config()
 
     assert cfg.llm.mock is False
     assert cfg.llm.timeout == 120
@@ -66,6 +66,11 @@ def test_config_merge(work_dir):
     assert overridden.llm.model == "gpt-4o-mini"
     assert overridden.llm.timeout == 60
     assert overridden.logging.level == "ERROR"
+
+
+def test_load_config_explicit_missing_path_raises(work_dir):
+    with pytest.raises(ConfigError, match="not found"):
+        load_config(str(work_dir / "does-not-exist.yaml"))
 
 
 def test_config_validation(work_dir):

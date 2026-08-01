@@ -3,7 +3,7 @@ import re
 import sys
 import threading
 import time
-from typing import Any, Callable, Optional, TextIO
+from typing import Any, Callable, List, Optional, TextIO
 
 DEFAULT_DANGEROUS_COMMANDS = [
     "rm -rf",
@@ -21,9 +21,9 @@ class GuardrailEngine:
         dangerous_commands: Optional[list[str]] = None,
         regex_rules: Optional[list[str]] = None,
     ):
-        self._dangerous_commands = [
-            command.lower() for command in (dangerous_commands or DEFAULT_DANGEROUS_COMMANDS)
-        ]
+        if dangerous_commands is None:
+            dangerous_commands = DEFAULT_DANGEROUS_COMMANDS
+        self._dangerous_commands = [command.lower() for command in dangerous_commands]
         self._regex_rules = [re.compile(pattern) for pattern in (regex_rules or [])]
 
     @staticmethod
@@ -161,8 +161,8 @@ class HITLStateMachine:
                 return "timeout"
             out.write("Approve dangerous action? (y/n/t) ")
             out.flush()
-            line = source.readline()
-            if not line:
+            line = self._readline_bounded(source)
+            if line is None:
                 self.timeout()
                 return "timeout"
             choice = line.strip().lower()
@@ -176,6 +176,32 @@ class HITLStateMachine:
                 self.timeout()
                 return "timeout"
 
+    def _readline_bounded(self, source: TextIO) -> Optional[str]:
+        """One line from ``source``, or ``None`` on EOF/closed stream/deadline.
+
+        ``readline`` can block indefinitely (a silent terminal, an open-but-idle
+        pipe), so it runs in a daemon thread joined for the remaining approval
+        deadline; a closed stream (``ValueError``/``OSError``) or EOF degrades to
+        the same clean ``None`` -> timeout.
+        """
+        result: List[Optional[str]] = []
+
+        def _read() -> None:
+            try:
+                line = source.readline()
+            except (ValueError, OSError):
+                line = ""
+            result.append(line if line else None)
+
+        deadline = (self._paused_at or self._clock()) + self._approval_timeout
+        remaining = deadline - self._clock()
+        reader = threading.Thread(target=_read, daemon=True, name="hitl-readline")
+        reader.start()
+        reader.join(max(remaining, 0.0))
+        if reader.is_alive():
+            return None
+        return result[0] if result else None
+
 
 class HITLGate:
     def __init__(
@@ -184,10 +210,17 @@ class HITLGate:
         approval_timeout: int = 300,
         clock: Optional[Callable[[], float]] = None,
         decision_source: Optional[Callable[[], str]] = None,
+        input_stream: Optional[TextIO] = None,
+        output_stream: Optional[TextIO] = None,
     ):
         self.engine = engine or GuardrailEngine()
         self._machine = HITLStateMachine(approval_timeout=approval_timeout, clock=clock)
-        self._decision_source = decision_source or self._machine.await_external_decision
+        if decision_source is None and (input_stream is not None or output_stream is not None):
+            self._decision_source = lambda: self._machine.wait_for_decision(
+                input_stream=input_stream, output_stream=output_stream
+            )
+        else:
+            self._decision_source = decision_source or self._machine.await_external_decision
 
     @property
     def state(self) -> str:

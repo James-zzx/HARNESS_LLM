@@ -38,4 +38,8 @@ open_design:
 
 credential:
   service: harness
+  # Where credentials are stored/read: keyring (OS keychain) or env.
+  # env reads the value from HARNESS_<SERVICE>_<KEY> (e.g. llm/api_key ->
+  # HARNESS_LLM_API_KEY). Env values are plaintext/process-visible; prefer
+  # keyring except in containers where a keyring is unavailable.
   backend: keyring           # keyring | env

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from harness.logger import TraceContext, get_logger
+from harness.sandbox import communicate_with_timeout
 
 logger = get_logger("harness.tool_executor")
 
@@ -71,6 +72,8 @@ class EditFileTool(_PathTool):
             path = self._resolve(params.get("path", ""))
             old_string = params.get("old_string", "")
             new_string = params.get("new_string", "")
+            if not old_string:
+                return ToolResult(success=False, error="old_string must not be empty")
             text = path.read_text(encoding="utf-8")
             if old_string not in text:
                 return ToolResult(
@@ -87,27 +90,69 @@ class RunShellTool(Tool):
     name = "run_shell"
     description = "Execute a shell command within the working directory."
 
-    def __init__(self, work_dir: Path):
+    def __init__(self, work_dir: Path, timeout: Optional[float] = None, sandbox=None):
         self._work_dir = work_dir.resolve()
+        self._timeout = timeout
+        self._sandbox = sandbox
 
     def execute(self, params: Dict[str, Any]) -> ToolResult:
         command = params.get("command", "")
+        if self._sandbox is not None:
+            return self._run_via_sandbox(command)
+        return self._run_subprocess(command)
+
+    def _run_via_sandbox(self, command: str) -> ToolResult:
+        result = self._sandbox.run(command, timeout=self._timeout)
+        if result.error:
+            return ToolResult(success=False, error=result.error, exit_code=result.returncode)
+        if result.timed_out:
+            return ToolResult(
+                success=False,
+                error=f"command timed out after {self._effective_timeout()}s",
+                output=result.stdout,
+                exit_code=result.returncode,
+            )
+        return ToolResult(
+            success=result.returncode == 0,
+            output=result.stdout,
+            error=result.stderr,
+            exit_code=result.returncode,
+        )
+
+    def _run_subprocess(self, command: str) -> ToolResult:
         try:
-            completed = subprocess.run(
+            proc = subprocess.Popen(
                 command,
                 shell=True,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=str(self._work_dir),
+                start_new_session=True,
             )
         except OSError as exc:
             return ToolResult(success=False, error=str(exc))
+        stdout, stderr, timed_out = communicate_with_timeout(proc, self._timeout)
+        if timed_out:
+            return ToolResult(
+                success=False,
+                error=f"command timed out after {self._timeout}s",
+                output=stdout,
+                exit_code=proc.returncode,
+            )
         return ToolResult(
-            success=completed.returncode == 0,
-            output=completed.stdout,
-            error=completed.stderr,
-            exit_code=completed.returncode,
+            success=proc.returncode == 0,
+            output=stdout,
+            error=stderr,
+            exit_code=proc.returncode,
         )
+
+    def _effective_timeout(self) -> Optional[float]:
+        if self._timeout is not None:
+            return self._timeout
+        return self._sandbox.timeout if self._sandbox is not None else None
 
 
 class ListDirTool(_PathTool):
@@ -123,12 +168,16 @@ class ListDirTool(_PathTool):
             return ToolResult(success=False, error=str(exc))
 
 
-def default_tools(work_dir: Path) -> List[Tool]:
+def default_tools(
+    work_dir: Path,
+    shell_timeout: Optional[float] = None,
+    sandbox=None,
+) -> List[Tool]:
     return [
         ReadFileTool(work_dir),
         WriteFileTool(work_dir),
         EditFileTool(work_dir),
-        RunShellTool(work_dir),
+        RunShellTool(work_dir, timeout=shell_timeout, sandbox=sandbox),
         ListDirTool(work_dir),
     ]
 
@@ -155,10 +204,12 @@ class ToolExecutor:
         work_dir: Optional[str] = None,
         sandbox_check: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
         registry: Optional[ToolRegistry] = None,
+        shell_timeout: Optional[float] = None,
+        sandbox=None,
     ):
         self.work_dir = Path(work_dir or ".").resolve()
         self.registry = registry or ToolRegistry()
-        for tool in default_tools(self.work_dir):
+        for tool in default_tools(self.work_dir, shell_timeout=shell_timeout, sandbox=sandbox):
             self.registry.register(tool)
         self.sandbox_check = sandbox_check or (lambda tool_name, params: True)
 
