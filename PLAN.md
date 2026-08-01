@@ -516,7 +516,136 @@ Phase 5 (分发)                                       │
 - **Phase 3**: 2 个任务
 - **Phase 4**: 5 个任务 (含 Open Design 集成)
 - **Phase 5**: 3 个任务
-- **合计**: 18 个任务
+- **Phase 6**: 6 个任务 (Dashboard + 运行时对话)
+- **合计**: 24 个任务
+
+## Phase 6: WebUI Dashboard 与运行时对话
+
+> 依赖 Phase 1-5 完成。此层通过 MockLLM + TestClient 可完全脱离 LLM 与外部插件测试。硬性约束：**dashboard 开箱即用，零外部依赖（不依赖 Open Design、无 CDN/外部资源）**。
+
+### P6-01: MessageQueue（运行时对话队列）
+- **依赖**: P2-03, P4-04
+- **并行**: —
+- **复杂度**: S
+- **涉及文件**: `src/harness/message_queue.py`, `src/tests/test_message_queue.py`
+- **内容**:
+  - [ ] 定义 `MessageQueue` 类（task_id, pending 列表, threading.Lock, threading.Event）
+  - [ ] `push(message: dict) -> None` — 追加用户消息并唤醒等待（线程安全）
+  - [ ] `pop_all() -> list[dict]` — 消费并清空待处理消息
+  - [ ] `has_pending() -> bool` — 是否有未消费消息
+  - [ ] `wait_for_message(timeout: float) -> list[dict]` — 事件等待，超时返回空列表
+  - [ ] `reset() -> None` — 清空（任务开始/结束时调用）
+- **TDD 先写测试**:
+  - [ ] `test_push_and_pop_all`: push 后 pop_all 返回该消息并清空
+  - [ ] `test_has_pending`: push 后 True，pop 后 False
+  - [ ] `test_wait_returns_on_push`: 另一线程 push 后 wait 返回（事件唤醒）
+  - [ ] `test_wait_timeout_returns_empty`: 超时后返回空列表不阻塞
+  - [ ] `test_concurrent_push_pop`: 多线程 push/pop 无数据丢失或崩溃
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_message_queue.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+
+### P6-02: Orchestrator USER_INPUT 状态
+- **依赖**: P6-01, P2-03
+- **并行**: —
+- **复杂度**: L
+- **涉及文件**: `src/harness/orchestrator.py`, `src/harness/message_queue.py`, `src/tests/test_orchestrator.py`
+- **内容**:
+  - [ ] 新增状态常量 `USER_INPUT = "USER_INPUT"`
+  - [ ] `Orchestrator.__init__` 增加可选参数 `message_queue: Optional[MessageQueue] = None`
+  - [ ] 在 `_run_loop` 每轮 LLM 调用前：若 `message_queue` 存在且有 `has_pending()`，则进入 `USER_INPUT` 状态，`wait_for_message(timeout=task.timeout 剩余)`；收到消息后作为 `role="user"` 加入记忆，继续循环
+  - [ ] 若 `message_queue` 为 None（未启用对话），行为与现状完全一致（向后兼容）
+  - [ ] `interrupt()` 方法: 设置 `_interrupt_requested` 标志，下一轮循环检查并进入 USER_INPUT
+- **TDD 先写测试**:
+  - [ ] `test_orchestrator_user_input`: MockLLM 预设"先写文件再 done"；测试在第二轮前 push 用户消息"改成另一种写法"，断言后续意图变化且用户消息进入记忆（离线确定性）
+  - [ ] `test_orchestrator_user_input_timeout`: push 后不回复，短 timeout 后自动继续到 COMPLETED
+  - [ ] `test_orchestrator_no_queue_backward_compat`: 不传 message_queue 时行为与现状一致（现有测试全绿）
+  - [ ] `test_orchestrator_interrupt`: 运行中调用 interrupt()，下一轮进入 USER_INPUT 并等待
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_orchestrator.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+
+### P6-03: REST API 对话端点
+- **依赖**: P6-02, P4-04
+- **并行**: —
+- **复杂度**: M
+- **涉及文件**: `src/harness/api.py`, `src/tests/test_api.py`
+- **内容**:
+  - [ ] `TaskRecord` 增加 `message_queue: Optional[MessageQueue]` 字段
+  - [ ] `TaskManager.create` 为每个任务创建 `MessageQueue`
+  - [ ] 新增端点:
+    - `POST /api/tasks/{task_id}/message` — body `{content: str}` → `message_queue.push({"role":"user","content":...})` → 200
+    - `GET /api/tasks/{task_id}/messages` — 返回对话历史（从 memory 或记录）
+    - `POST /api/tasks/{task_id}/interrupt` — 触发 orchestrator.interrupt() → 200
+  - [ ] 错误处理: 任务不存在 → 404；空 content → 400
+- **TDD 先写测试**:
+  - [ ] `test_api_send_message`: POST message → 200，message_queue 收到
+  - [ ] `test_api_get_messages`: GET messages → 200 返回历史
+  - [ ] `test_api_interrupt`: POST interrupt → 200
+  - [ ] `test_api_message_not_found`: 不存在 task → 404
+  - [ ] `test_api_message_empty_content`: 空 content → 400
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_api.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+
+### P6-04: WebUI Dashboard 静态前端
+- **依赖**: P4-04, P6-03
+- **并行**: —
+- **复杂度**: L
+- **涉及文件**: `src/harness/webui/index.html`, `src/harness/webui/app.js`, `src/harness/webui/style.css`, `src/tests/test_dashboard.py`
+- **内容**:
+  - [ ] `webui/index.html` — 单页应用结构：顶栏（标题 + 新任务按钮 + 连接状态灯）、任务列表、任务详情（元数据 + 日志区 + HITL 按钮 + 对话区）、新任务弹窗（表单 + YAML 切换）
+  - [ ] `webui/style.css` — 采用 minimal 设计系统风格（色板/字体/排版内嵌，无外部引用），状态徽章配色（PENDING 灰/RUNNING 蓝/PAUSED 琥珀/COMPLETED 绿/FAILED 红）
+  - [ ] `webui/app.js` — 交互逻辑:
+    - 每 2s 轮询 `GET /api/tasks`（若有列表端点）或逐任务 `GET /api/tasks/{id}` + `GET /api/tasks/{id}/logs`
+    - 新任务表单: `POST /api/tasks`
+    - HITL: 状态 PAUSED 时显示 [批准]/[拒绝]，调 `POST /api/hitl/{id}/approve|reject`
+    - 对话区: 输入框 + [发送] 按钮 → `POST /api/tasks/{id}/message`; [上传文件] 按钮 → FileReader 读内容填入消息框（可编辑后发送）; 消息框始终可打字
+    - 连接状态灯: API 不可达时红灯 + 提示
+    - 日志区自动滚到底部（用户上滚时暂停自动滚动）
+  - [ ] **零外部依赖**: 无 CDN、无外部字体/脚本，全部内联
+- **TDD 先写测试**:
+  - [ ] `test_dashboard_index_served`: `GET /` 或 `/dashboard` 返回 200 + HTML 含关键元素（id 锚点）
+  - [ ] `test_dashboard_static_assets`: `GET /static/webui/app.js` / `style.css` 返回 200
+  - [ ] `test_dashboard_no_external_refs`: index.html 不含 `http://`/`https://` 外部资源引用（零外部依赖验证）
+  - [ ] `test_dashboard_integration`: TestClient 下页面加载 + API 端点（提交任务→轮询→HITL）可交互
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_dashboard.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+
+### P6-05: `harness dashboard` CLI 命令与配置
+- **依赖**: P6-04, P1-02
+- **并行**: —
+- **复杂度**: M
+- **涉及文件**: `src/harness/main.py`, `src/harness/dashboard.py`, `src/harness/config.py`, `src/tests/test_cli.py`, `src/tests/test_config.py`
+- **内容**:
+  - [ ] config.py 新增 `WebUIConfig` dataclass（`host: str = "127.0.0.1"`, `port: int = 8000`），注册到 `_SECTION_CLASSES` / `_SECTION_FIELDS`，`HarnessConfig` 增加 `webui: WebUIConfig`
+  - [ ] `src/harness/dashboard.py` 实现 `run_dashboard(config) -> None`: 加载 `create_app()`，挂载 `StaticFiles` 提供 `webui/`，`uvicorn.run(host, port)`，打印 URL，Ctrl+C 优雅停止
+  - [ ] main.py 新增 `harness dashboard [--host] [--port] [--config]` 命令（参数覆盖 config.webui）
+  - [ ] `create_app` 增加挂载静态目录（路径由包定位 `webui/`）
+- **TDD 先写测试**:
+  - [ ] `test_config_webui_section`: 默认 host/port 正确；YAML 可覆盖
+  - [ ] `test_cli_dashboard_help`: `harness dashboard --help` 退出 0 且含 host/port 参数
+  - [ ] `test_dashboard_uvicorn_invoked`: mock uvicorn.run，断言 host/port 从 config 传入
+  - [ ] `test_api_mounts_static`: TestClient 下 `/static/webui/index.html` 可访问
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_cli.py src/tests/test_config.py src/tests/test_dashboard.py` 全部通过
+  - [ ] 手动 `python -m harness dashboard` 启动后浏览器访问 URL
+
+### P6-06: README 与文档收尾
+- **依赖**: P6-05
+- **并行**: —
+- **复杂度**: S
+- **涉及文件**: `README.md`, `AGENT_LOG.md`, `PLAN.md`（本文件状态）
+- **内容**:
+  - [ ] README 新增"图形化界面（Dashboard）"章节: `harness dashboard` 启动命令、功能列表（任务/HITL/对话/文件上传）、零外部依赖说明、Open Design 可选关系
+  - [ ] README API 端点表补充 message/messages/interrupt
+  - [ ] AGENT_LOG.md 记录 Phase 6 执行
+  - [ ] PLAN.md 勾选本 Phase 任务并附 commit hash
+- **验证步骤**:
+  - [ ] 按 README 从零安装并 `harness dashboard` 运行一遍
+  - [ ] 全量 `pytest src/tests/` 通过
+
 
 ## 完成清单
 
