@@ -3,7 +3,16 @@ import json
 import httpx
 import pytest
 
-from harness.llm_adapter import LLMClient, LLMFactory, Message, OpenAIClient, Response
+from harness.config import CredentialConfig, HarnessConfig, LLMConfig
+from harness.credential_store import CredentialStore, MemoryBackend
+from harness.llm_adapter import (
+    LLMClient,
+    LLMFactory,
+    Message,
+    OpenAIClient,
+    Response,
+    build_llm,
+)
 from harness.mock_llm import MockLLM
 from tests.base import BaseHarnessTest
 
@@ -31,6 +40,46 @@ def test_llm_factory_creates_mock():
 def test_llm_factory_creates_openai():
     client = LLMFactory(mock=False, api_key="test-key").create()
     assert isinstance(client, OpenAIClient)
+
+
+class _ExplodingStore:
+    def get_key(self, service, key):
+        raise AssertionError("mock mode must not touch the credential store")
+
+
+def test_build_llm_mock_mode_skips_credential_resolution():
+    config = HarnessConfig(llm=LLMConfig(mock=True, credential_ref="harness/openai"))
+
+    client = build_llm(config, credential_store=_ExplodingStore())
+
+    assert isinstance(client, MockLLM)
+
+
+def test_build_llm_resolves_credential_ref():
+    store = CredentialStore(backend=MemoryBackend())
+    store.set_key("harness", "openai", "sk-abc123")
+    config = HarnessConfig(
+        llm=LLMConfig(mock=False, model="gpt-x", credential_ref="harness/openai")
+    )
+
+    client = build_llm(config, credential_store=store)
+
+    assert isinstance(client, OpenAIClient)
+    assert client._api_key == "sk-abc123"
+    assert client._model == "gpt-x"
+
+
+def test_build_llm_uses_env_backend_from_config(monkeypatch):
+    monkeypatch.setenv("HARNESS_LLM_API_KEY", "sk-from-env")
+    config = HarnessConfig(
+        llm=LLMConfig(mock=False, credential_ref="llm/api_key"),
+        credential=CredentialConfig(backend="env"),
+    )
+
+    client = build_llm(config)
+
+    assert isinstance(client, OpenAIClient)
+    assert client._api_key == "sk-from-env"
 
 
 def test_llm_factory_passes_config_to_openai():

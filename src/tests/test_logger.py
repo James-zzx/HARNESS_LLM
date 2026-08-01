@@ -129,3 +129,47 @@ def test_log_level_dispatch(work_dir):
     ]
     assert [record["event"] for record in records] == ["note", "careful", "boom"]
     assert [record["level"] for record in records] == ["info", "warning", "error"]
+
+
+def test_redaction_avoids_key_substring_false_positives(work_dir):
+    log_file = work_dir / "harness.jsonl"
+    setup_logging(level="INFO", file_path=str(log_file))
+
+    get_logger("harness.redact").info(
+        "run",
+        monkey="jumps",
+        keyboard="qwerty",
+        keyring="keystore",
+        keywords=["a", "b"],
+        api_key="sk-123",
+    )
+
+    record = json.loads(
+        log_file.read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert record["monkey"] == "jumps"
+    assert record["keyboard"] == "qwerty"
+    assert record["keyring"] == "keystore"
+    assert record["keywords"] == ["a", "b"]
+    assert record["api_key"] == "***"
+
+
+def test_redaction_key_suffixes_still_redacted(work_dir):
+    log_file = work_dir / "harness.jsonl"
+    setup_logging(level="INFO", file_path=str(log_file))
+
+    get_logger("harness.redact").info(
+        "run",
+        access_key="ak-1",
+        secret_key="sk-1",
+        key_id="kid-1",
+        credential_ref="svc/key",
+    )
+
+    record = json.loads(
+        log_file.read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert record["access_key"] == "***"
+    assert record["secret_key"] == "***"
+    assert record["key_id"] == "***"
+    assert record["credential_ref"] == "***"

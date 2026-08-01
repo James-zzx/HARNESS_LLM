@@ -1,5 +1,7 @@
 import ctypes
+import ntpath
 import os
+import posixpath
 import re
 import signal
 import subprocess
@@ -8,7 +10,7 @@ import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # A destructive `rm` whose TARGET is the filesystem/drive root: the target must be
 # followed by end-of-string, whitespace, or a shell operator (`;` `|` `&&` `||` `>` `<`
@@ -28,6 +30,97 @@ DEFAULT_BLOCKED_COMMANDS = (
     # --no-preserve-root is a deliberate root-deletion marker; never allow it with `rm`.
     r"\brm\b[\s\S]*--no-preserve-root",
 )
+
+# `..`-traversal is handled functionally (regexes can't count components vs. `..`):
+# any `rm` target whose lexical normalization lands on a root or system directory is
+# blocked, e.g. `rm -rf /tmp/../..` (-> `/`) or `rm -rf /tmp/../../Windows`.
+_SYSTEM_DIR_NAMES = (
+    "etc",
+    "usr",
+    "bin",
+    "sbin",
+    "lib",
+    "boot",
+    "dev",
+    "proc",
+    "sys",
+    "Windows",
+    "Program Files",
+    "ProgramData",
+    "System32",
+    "System",
+    "Users",
+    "Windows.old",
+)
+
+
+def _normalized_target_is_dangerous(target: str) -> bool:
+    """True when an absolute target lexically normalizes to root or a system dir."""
+    raw = target.strip().strip("'\"")
+    if not raw:
+        return False
+    if raw.startswith(("//", "\\\\")) or (len(raw) >= 2 and raw[1] == ":"):
+        norm = ntpath.normpath(raw)
+        drive, rest = ntpath.splitdrive(norm)
+        if rest in ("\\", "/") and drive:
+            return True
+        if drive and not rest:
+            return True
+        if not rest:
+            return False
+        names = rest.replace("\\", "/").strip("/").split("/")
+        return names and names[0].lower() in _SYSTEM_DIR_NAMES
+    if raw.startswith(("/", "\\")):
+        norm = posixpath.normpath(raw)
+        if norm == "/":
+            return True
+        names = norm.strip("/").split("/")
+        return names and names[0].lower() in _SYSTEM_DIR_NAMES
+    return False
+
+
+# Shell operators that terminate or glue command segments. A token carrying one of
+# these (e.g. `/tmp/../..;` or `/tmp/../..&&echo`) must be split on the operator
+# first so each operand/path segment is still checked for root/system resolution.
+_RM_OPERATOR_SPLIT = re.compile(r"[;|&<>`()$]")
+
+
+def _rm_targets_root_or_system(command: str) -> bool:
+    """True if an `rm` invocation targets a path normalizing to root/system dir."""
+    if not re.search(r"\brm\b", command, re.IGNORECASE):
+        return False
+    # Split on shell operators first so every operator-glued command segment is
+    # scanned independently: a safe first target can no longer mask a later
+    # dangerous `rm` (`/tmp/x && rm -rf /tmp/../..`, `/tmp/x;rm -rf /tmp/../..`).
+    segments = _RM_OPERATOR_SPLIT.split(command)
+    for index, segment in enumerate(segments):
+        stripped = segment.strip()
+        if not stripped:
+            continue
+        if re.search(r"\brm\b", stripped, re.IGNORECASE):
+            tokens = stripped.split()
+            for token_index, token in enumerate(tokens):
+                if not re.fullmatch(r"rm", token, re.IGNORECASE):
+                    continue
+                for following in tokens[token_index + 1 :]:
+                    if following == "-" or following.startswith("-"):
+                        continue
+                    if _normalized_target_is_dangerous(following):
+                        return True
+                    break
+            continue
+        # An operator wrapper split the target away from its `rm` invocation
+        # (e.g. ``rm -rf `/tmp/../..` ``): the segment before it is an `rm` still
+        # awaiting its target, and this bare segment is that target.
+        if _normalized_target_is_dangerous(stripped):
+            previous_tokens = segments[index - 1].strip().split() if index > 0 else []
+            if (
+                previous_tokens
+                and previous_tokens[0].lower() == "rm"
+                and all(token.startswith("-") for token in previous_tokens[1:])
+            ):
+                return True
+    return False
 
 _PATH_TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir"})
 
@@ -51,6 +144,52 @@ def _is_within(child: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _terminate_process(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
+def communicate_with_timeout(
+    proc: subprocess.Popen, timeout: Optional[float]
+) -> Tuple[str, str, bool]:
+    """communicate() bounded by ``timeout``, killing the whole tree on expiry.
+
+    Returns ``(stdout, stderr, timed_out)``. Without this the direct child is
+    killed on timeout but its descendants (e.g. ``shell=True`` grandchildren)
+    can keep the pipes open, hanging the caller.
+    """
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return stdout, stderr, False
+    except subprocess.TimeoutExpired:
+        _terminate_process(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            _terminate_process(proc)
+            stdout, stderr = proc.communicate()
+        return stdout, stderr, True
 
 
 class Sandbox:
@@ -99,6 +238,8 @@ class Sandbox:
         for pattern in self.blocked_commands:
             if re.search(pattern, command, re.IGNORECASE):
                 return False
+        if _rm_targets_root_or_system(command):
+            return False
         return True
 
     def check_network(self) -> bool:
@@ -121,6 +262,8 @@ class Sandbox:
         shell: Optional[bool] = None,
         network: bool = False,
     ) -> RunResult:
+        if timeout is None:
+            timeout = self.timeout
         if network and not self.check_network():
             return RunResult(error="network access denied by sandbox")
         if not self.check_command(command):
@@ -146,17 +289,7 @@ class Sandbox:
             self._apply_process_limits(proc)
             if self.memory_limit is not None:
                 self._start_memory_watcher(proc)
-            try:
-                stdout, stderr = proc.communicate(timeout=timeout)
-                timed_out = False
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                self._terminate(proc)
-                try:
-                    stdout, stderr = proc.communicate(timeout=10)
-                except subprocess.TimeoutExpired:
-                    self._terminate(proc)
-                    stdout, stderr = proc.communicate()
+            stdout, stderr, timed_out = communicate_with_timeout(proc, timeout)
             return RunResult(
                 returncode=proc.returncode,
                 stdout=stdout,
@@ -181,27 +314,7 @@ class Sandbox:
         self.close()
 
     def _terminate(self, proc: subprocess.Popen) -> None:
-        if os.name == "nt":
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                    capture_output=True,
-                    timeout=5,
-                )
-            except Exception:
-                pass
-            try:
-                proc.kill()
-            except Exception:
-                pass
-        else:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+        _terminate_process(proc)
 
     def _apply_process_limits(self, proc: subprocess.Popen) -> None:
         if os.name == "nt":

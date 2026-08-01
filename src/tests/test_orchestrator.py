@@ -105,3 +105,37 @@ def test_orchestrator_full_cycle(work_dir):
     assert (work_dir / "solution.txt").read_text(encoding="utf-8") == "right"
     messages = orch.memory.get_history()
     assert any(m.role == "tool" and "evaluation" in m.content for m in messages)
+
+
+def test_orchestrator_non_dict_intent_feeds_back_error(work_dir):
+    presets = [json.dumps(42), DONE]
+    orch = Orchestrator(llm=MockLLM(presets), work_dir=work_dir)
+
+    result = orch.run(Task(id="t6", prompt="reply with 42"))
+
+    assert result.status == "COMPLETED"
+    assert orch.state == "COMPLETED"
+    messages = orch.memory.get_history()
+    assert any(m.role == "tool" and "JSON object" in m.content for m in messages)
+
+
+def test_orchestrator_rejection_feedback_in_result(work_dir):
+    from harness.hitl import GuardrailEngine, HITLGate
+
+    engine = GuardrailEngine(regex_rules=[r"^echo danger"])
+    gate = HITLGate(engine=engine, decision_source=lambda: "rejected")
+    dangerous = json.dumps({"tool": "run_shell", "params": {"command": "echo danger"}})
+    orch = Orchestrator(
+        llm=MockLLM([dangerous]),
+        work_dir=work_dir,
+        hitl_checker=gate.check,
+        approval=gate.decide,
+        feedback_provider=gate.rejection_feedback,
+    )
+    result = orch.run(Task(id="t8", prompt="do the task"))
+
+    assert result.status == "PAUSED"
+    assert orch.state == "PAUSED"
+    assert result.feedback is not None
+    assert "run_shell" in result.feedback
+    assert "echo danger" in result.feedback

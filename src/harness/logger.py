@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 import uuid
 from typing import Any, Optional, TextIO
@@ -10,12 +11,15 @@ import structlog.stdlib
 from structlog import BoundLogger
 
 _REDACT = "***"
-_SENSITIVE_TERMS = ("key", "secret", "token", "password")
+_SENSITIVE_TERMS = ("secret", "token", "password", "credential_ref")
+_KEY_PATTERN = re.compile(r"(?<![a-z0-9])key(?![a-z0-9])")
 
 
 def _is_sensitive(key: str) -> bool:
     lowered = key.lower()
-    return any(term in lowered for term in _SENSITIVE_TERMS)
+    if any(term in lowered for term in _SENSITIVE_TERMS):
+        return True
+    return bool(_KEY_PATTERN.search(lowered))
 
 
 def _redact(value: Any) -> Any:

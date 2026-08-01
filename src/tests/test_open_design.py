@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from harness.hitl import HITLGate
-from harness.open_design import ODNotFoundError, OpenDesignClient
+from harness.open_design import ODDaemonError, ODNotFoundError, OpenDesignClient
 
 
 class _FakeDaemonProcess:
@@ -109,6 +109,44 @@ def test_od_create_artifact():
         config=_od_config(), transport=httpx.MockTransport(handler=handler)
     )
     assert client.create_artifact("proj-1", "diagram", "architecture") == "art-42"
+
+
+def test_od_daemon_start_returns_url_and_stops():
+    from harness.main import start_open_design_daemon, stop_open_design_daemon
+
+    class _FakeClient:
+        base_url = "http://127.0.0.1:7456"
+
+        def start_daemon(self):
+            calls.append("start")
+
+        def stop_daemon(self):
+            calls.append("stop")
+
+        def health_check(self):
+            return True
+
+    calls = []
+    client = _FakeClient()
+    assert start_open_design_daemon(client) == "http://127.0.0.1:7456"
+    stop_open_design_daemon(client)
+    assert calls == ["start", "stop"]
+
+
+def test_od_daemon_unhealthy_raises():
+    from harness.main import start_open_design_daemon
+
+    class _UnhealthyClient:
+        base_url = "http://127.0.0.1:3000"
+
+        def start_daemon(self):
+            pass
+
+        def health_check(self):
+            return False
+
+    with pytest.raises(ODDaemonError):
+        start_open_design_daemon(_UnhealthyClient())
 
 
 def test_api_approval_resumes_paused_task():

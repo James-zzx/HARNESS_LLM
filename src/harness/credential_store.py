@@ -1,5 +1,6 @@
 import getpass
 import json
+import os
 
 import click
 import keyring
@@ -33,6 +34,44 @@ class MemoryBackend:
         self._data.get(service, {}).pop(key, None)
 
 
+class EnvBackend:
+    """Reads/writes credentials through HARNESS_<SERVICE>_<KEY> environment variables.
+
+    The variable name derives from the credential reference (e.g. a reference of
+    ``llm/api_key`` resolves to ``HARNESS_LLM_API_KEY``). Values live in the
+    process environment, which is visible to other processes on the same host
+    (see README "凭据安全配置说明" for the plaintext risk).
+    """
+
+    _INDEX_KEY = "__keys__"
+
+    def __init__(self, env=None):
+        self._env = os.environ if env is None else env
+        self._index = {}
+
+    @staticmethod
+    def _var_name(service, key):
+        return f"HARNESS_{str(service).upper()}_{str(key).upper()}"
+
+    def set_password(self, service, key, value):
+        if key == self._INDEX_KEY:
+            return
+        self._env[self._var_name(service, key)] = value
+        self._index.setdefault(str(service), set()).add(str(key))
+
+    def get_password(self, service, key):
+        if key == self._INDEX_KEY:
+            keys = sorted(self._index.get(str(service), set()))
+            return json.dumps(keys) if keys else None
+        return self._env.get(self._var_name(service, key))
+
+    def delete_password(self, service, key):
+        name = self._var_name(service, key)
+        if name in self._env:
+            del self._env[name]
+        self._index.get(str(service), set()).discard(str(key))
+
+
 class CredentialStore:
     _INDEX_KEY = "__keys__"
 
@@ -40,6 +79,8 @@ class CredentialStore:
         self._backend = backend if backend is not None else KeyringBackend()
 
     def set_key(self, service, key, value):
+        if key == self._INDEX_KEY:
+            raise ValueError(f"'{self._INDEX_KEY}' is a reserved key name")
         self._backend.set_password(service, key, value)
         keys = self.list_keys(service)
         if key not in keys:
@@ -52,6 +93,8 @@ class CredentialStore:
         return self._backend.get_password(service, key)
 
     def delete_key(self, service, key):
+        if key == self._INDEX_KEY:
+            raise ValueError(f"'{self._INDEX_KEY}' is a reserved key name")
         self._backend.delete_password(service, key)
         keys = self.list_keys(service)
         if key in keys:
@@ -65,7 +108,11 @@ class CredentialStore:
         raw = self._backend.get_password(service, self._INDEX_KEY)
         if not raw:
             return []
-        return json.loads(raw)
+        try:
+            keys = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+        return keys if isinstance(keys, list) else []
 
 
 def prompt_for_key(key_name):

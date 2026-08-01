@@ -1,3 +1,5 @@
+import dataclasses
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
@@ -6,7 +8,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from harness.hitl import HITLGate
-from harness.orchestrator import Orchestrator, RunResult
+from harness.orchestrator import RunResult
 from harness.task import Task, TaskError, TaskParser, TaskStatus
 
 _STATUS_MAP = {
@@ -32,6 +34,7 @@ class TaskRecord:
     iterations: int = 0
     logs: list[str] = field(default_factory=list)
     hitl_gate: Optional[HITLGate] = None
+    feedback: Optional[str] = None
 
 
 class TaskManager:
@@ -45,76 +48,87 @@ class TaskManager:
                 raise TaskError(f"task already exists: {task.id}")
             self._records[task.id] = TaskRecord(task=task)
 
+    def _record(self, task_id: str) -> TaskRecord:
+        record = self._records.get(task_id)
+        if record is None:
+            raise TaskNotFoundError(f"task not found: {task_id}")
+        return record
+
     def snapshot(self, task_id: str) -> dict:
         with self._lock:
-            record = self._records.get(task_id)
-            if record is None:
-                raise TaskNotFoundError(f"task not found: {task_id}")
+            record = self._record(task_id)
+            status = record.status
+            gate = record.hitl_gate
+            if gate is not None and gate.state == "PAUSED":
+                status = TaskStatus.PAUSED
             return {
                 "task_id": record.task.id,
-                "status": record.status.value,
+                "status": status.value,
                 "iterations": record.iterations,
                 "error": record.error,
                 "logs": list(record.logs),
+                "feedback": record.feedback,
             }
 
     def get_gate(self, task_id: str) -> Optional[HITLGate]:
         with self._lock:
-            record = self._records.get(task_id)
-            if record is None:
-                raise TaskNotFoundError(f"task not found: {task_id}")
-            return record.hitl_gate
+            return self._record(task_id).hitl_gate
 
     def get_task(self, task_id: str) -> Task:
         with self._lock:
-            record = self._records.get(task_id)
-            if record is None:
-                raise TaskNotFoundError(f"task not found: {task_id}")
-            return record.task
+            return dataclasses.replace(self._record(task_id).task)
 
     def set_status(self, task_id: str, status: TaskStatus) -> None:
         with self._lock:
-            self._records[task_id].status = status
+            self._record(task_id).status = status
 
     def set_error(self, task_id: str, error: str) -> None:
         with self._lock:
-            self._records[task_id].error = error
+            self._record(task_id).error = error
 
     def set_iterations(self, task_id: str, iterations: int) -> None:
         with self._lock:
-            self._records[task_id].iterations = iterations
+            self._record(task_id).iterations = iterations
+
+    def set_feedback(self, task_id: str, feedback: str) -> None:
+        with self._lock:
+            self._record(task_id).feedback = feedback
 
     def append_log(self, task_id: str, line: str) -> None:
         with self._lock:
-            self._records[task_id].logs.append(line)
+            self._record(task_id).logs.append(line)
 
     def attach_hitl_gate(self, task_id: str, gate: HITLGate) -> None:
         with self._lock:
-            self._records[task_id].hitl_gate = gate
+            self._record(task_id).hitl_gate = gate
 
 
 def _map_status(status: str) -> TaskStatus:
-    return _STATUS_MAP.get(status, TaskStatus.FAILED)
+    try:
+        return _STATUS_MAP[status]
+    except KeyError:
+        raise TaskError(f"unknown orchestrator status: {status}") from None
 
 
 def _default_runner() -> TaskRunner:
     from harness.config import load_config
-    from harness.llm_adapter import DEFAULT_BASE_URL, LLMFactory
+    from harness.llm_adapter import build_llm
+    from harness.runtime import build_runtime
 
     config = load_config()
+    runtime = build_runtime(config)
 
     def run(task: Task, gate: HITLGate) -> RunResult:
-        llm = LLMFactory(
-            mock=config.llm.mock,
-            model=config.llm.model,
-            base_url=config.llm.base_url or DEFAULT_BASE_URL,
-            timeout=config.llm.timeout,
-            max_retries=config.llm.max_retries,
-        ).create()
-        orchestrator = Orchestrator(
+        llm = build_llm(config)
+        task_work_dir = tempfile.mkdtemp(
+            prefix="harness-task-", dir=str(runtime.work_dir)
+        )
+        orchestrator = runtime.build_orchestrator(
             llm=llm,
+            work_dir=task_work_dir,
             hitl_checker=gate.check,
             approval=gate.decide,
+            feedback_provider=gate.rejection_feedback,
         )
         return orchestrator.run(task)
 
@@ -129,12 +143,19 @@ def create_app(
     manager = task_manager or TaskManager()
     run = runner or _default_runner()
 
+    default_runtime = None
+    if runner is None:
+        from harness.config import load_config
+        from harness.runtime import build_runtime
+
+        default_runtime = build_runtime(load_config())
+
     app = FastAPI(title="AI Agent Harness API")
 
     def _run_task(task_id: str) -> None:
         manager.set_status(task_id, TaskStatus.RUNNING)
         manager.append_log(task_id, "task started")
-        gate = HITLGate()
+        gate = default_runtime.new_gate() if default_runtime is not None else HITLGate()
         manager.attach_hitl_gate(task_id, gate)
         try:
             result = run(manager.get_task(task_id), gate)
@@ -148,6 +169,8 @@ def create_app(
         manager.set_iterations(task_id, getattr(result, "iterations", 0))
         if getattr(result, "error", None):
             manager.set_error(task_id, result.error)
+        if getattr(result, "feedback", None):
+            manager.set_feedback(task_id, result.feedback)
         manager.append_log(task_id, f"task finished with status {status.value}")
 
     def _resolve_gate(task_id: str) -> HITLGate:
