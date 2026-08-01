@@ -6,7 +6,8 @@ FROM python:3.11-slim AS builder
 WORKDIR /build
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-cache-dir --no-deps --wheel-dir /wheels .
+RUN pip install --no-cache-dir hatchling \
+    && pip wheel --no-cache-dir --no-deps --wheel-dir /wheels .
 
 # Stage 2: minimal runtime image
 FROM python:3.11-slim AS runtime
@@ -14,9 +15,9 @@ FROM python:3.11-slim AS runtime
 RUN groupadd --system appuser && useradd --system --gid appuser appuser
 WORKDIR /app
 
-COPY --from=builder /wheels/harness_llm-*.whl /tmp/harness.whl
-RUN pip install --no-cache-dir /tmp/harness.whl \
-    && rm /tmp/harness.whl \
+COPY --from=builder /wheels/harness_llm-*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/harness_llm-*.whl \
+    && rm -f /tmp/harness_llm-*.whl \
     && chown -R appuser:appuser /app
 
 USER appuser
