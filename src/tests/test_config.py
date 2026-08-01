@@ -101,6 +101,18 @@ def test_load_config_explicit_missing_path_raises(work_dir):
         load_config(str(work_dir / "does-not-exist.yaml"))
 
 
+def test_config_webui_section(work_dir):
+    cfg = load_config()
+    assert cfg.webui.host == "127.0.0.1"
+    assert cfg.webui.port == 8000
+
+    cfg_file = work_dir / "config.yaml"
+    cfg_file.write_text("webui:\n  host: 0.0.0.0\n  port: 9000\n", encoding="utf-8")
+    cfg = load_config(str(cfg_file))
+    assert cfg.webui.host == "0.0.0.0"
+    assert cfg.webui.port == 9000
+
+
 def test_config_validation(work_dir):
     invalid_configs = [
         "llm:\n  mock: yes-please\n",
@@ -110,6 +122,7 @@ def test_config_validation(work_dir):
         "llm:\n  timeout: abc\n",
         "llm:\n  mock: [unclosed\n",
         "sandbox:\n  network: public\n",
+        "webui:\n  port: abc\n",
     ]
     for content in invalid_configs:
         cfg_file = work_dir / "config.yaml"

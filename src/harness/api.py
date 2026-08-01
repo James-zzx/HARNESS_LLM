@@ -2,15 +2,19 @@ import dataclasses
 import tempfile
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional, Protocol
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from harness.hitl import HITLGate
 from harness.message_queue import MessageQueue
 from harness.orchestrator import Orchestrator, RunResult
 from harness.task import Task, TaskError, TaskParser, TaskStatus
+
+_WEBUI_DIR = Path(__file__).resolve().parent / "webui"
 
 _STATUS_MAP = {
     "COMPLETED": TaskStatus.COMPLETED,
@@ -312,6 +316,17 @@ def create_app(
         if isinstance(exc, HTTPException):
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return JSONResponse(status_code=500, content={"detail": "internal server error"})
+
+    if _WEBUI_DIR.is_dir():
+        app.mount(
+            "/static/webui",
+            StaticFiles(directory=_WEBUI_DIR, html=True),
+            name="webui",
+        )
+
+        @app.get("/", include_in_schema=False)
+        def dashboard_index():
+            return FileResponse(_WEBUI_DIR / "index.html", media_type="text/html")
 
     return app
 

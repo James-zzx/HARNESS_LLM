@@ -9,6 +9,7 @@ import yaml
 from harness.cli import build_llm, config_to_yaml, to_orchestrator_task
 from harness.config import ConfigError, HarnessConfig, load_config
 from harness.credential_store import build_cred_cli
+from harness.dashboard import run_dashboard
 from harness.logger import setup_logging
 from harness.open_design import ODDaemonError, ODNotFoundError, OpenDesignClient
 from harness.runtime import build_runtime
@@ -82,6 +83,23 @@ def stop_open_design_daemon(client: OpenDesignClient) -> None:
 def _wait_until_interrupt() -> None:
     while True:
         time.sleep(3600)
+
+
+@cli.command("dashboard")
+@click.option("--host", default=None, help="Bind host (default: 127.0.0.1)")
+@click.option("--port", type=int, default=None, help="Bind port (default: 8000)")
+@click.option("--config", "config_path", default=None, help="Path to a harness config file.")
+def dashboard_command(host, port, config_path) -> None:
+    """Serve the web dashboard (REST API + static UI) via uvicorn."""
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        _error(f"failed to load config: {exc}")
+    if host is not None:
+        config.webui.host = host
+    if port is not None:
+        config.webui.port = port
+    run_dashboard(config)
 
 
 @cli.command("webui")

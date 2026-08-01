@@ -60,3 +60,43 @@ def test_dashboard_markers():
     html = _read("index.html")
     for marker in MARKERS:
         assert re.search(rf'id="{marker}"', html) is not None, marker
+
+
+def test_dashboard_uvicorn_invoked(monkeypatch):
+    from harness.config import HarnessConfig
+    from harness.dashboard import run_dashboard
+
+    config = HarnessConfig()
+    config.webui.host = "0.0.0.0"
+    config.webui.port = 9876
+
+    calls = []
+
+    def fake_uvicorn_run(app, **kwargs):
+        calls.append((app, kwargs))
+
+    monkeypatch.setattr("harness.dashboard.uvicorn.run", fake_uvicorn_run)
+
+    run_dashboard(config)
+
+    assert len(calls) == 1
+    app, kwargs = calls[0]
+    assert kwargs["host"] == "0.0.0.0"
+    assert kwargs["port"] == 9876
+
+
+def test_api_mounts_static():
+    from harness.api import create_app
+
+    app = create_app(
+        runner=lambda task, gate, message_queue=None, on_orchestrator=None: None
+    )
+    with TestClient(app) as client:
+        index = client.get("/static/webui/index.html")
+        assert index.status_code == 200
+        assert "text/html" in index.headers["content-type"]
+        assert client.get("/static/webui/style.css").status_code == 200
+        assert client.get("/static/webui/app.js").status_code == 200
+        landing = client.get("/")
+        assert landing.status_code == 200
+        assert "AI Agent Harness" in landing.text
