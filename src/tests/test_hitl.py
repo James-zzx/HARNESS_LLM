@@ -109,6 +109,28 @@ def test_hitl_cli_decision():
     assert sm2.state == "REJECTED"
 
 
+def _stdin_gate(choice):
+    gate = HITLGate()
+    gate._decision_source = lambda: gate._machine.wait_for_decision(
+        input_stream=io.StringIO(choice), output_stream=io.StringIO()
+    )
+    return gate
+
+
+def test_gate_decide_stdin_approved():
+    gate = _stdin_gate("y\n")
+    gate.check("run_shell", {"command": "rm -rf /"})
+    assert gate.decide("run_shell", {"command": "rm -rf /"}) is True
+    assert gate.state == "RUNNING"
+
+
+def test_gate_decide_stdin_rejected():
+    gate = _stdin_gate("n\n")
+    gate.check("run_shell", {"command": "rm -rf /"})
+    assert gate.decide("run_shell", {"command": "rm -rf /"}) is False
+    assert gate.state == "REJECTED"
+
+
 def test_orchestrator_hitl_approved_proceeds(work_dir):
     engine = GuardrailEngine(regex_rules=[r"^echo danger"])
     gate = HITLGate(engine=engine, decision_source=lambda: "approved")

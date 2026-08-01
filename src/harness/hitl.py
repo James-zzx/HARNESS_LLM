@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import threading
 import time
 from typing import Any, Callable, Optional, TextIO
 
@@ -64,6 +65,7 @@ class HITLStateMachine:
         self._state = self.RUNNING
         self._pending: Optional[dict] = None
         self._paused_at: Optional[float] = None
+        self._decision_event = threading.Event()
 
     @property
     def state(self) -> str:
@@ -75,23 +77,27 @@ class HITLStateMachine:
         self._pending = action
         self._paused_at = self._clock()
         self._state = self.PAUSED
+        self._decision_event.clear()
 
     def approve(self) -> bool:
         if self._state != self.PAUSED:
             raise ValueError(f"cannot approve from state {self._state}")
         self._state = self.APPROVED
+        self._decision_event.set()
         return True
 
     def reject(self) -> bool:
         if self._state != self.PAUSED:
             raise ValueError(f"cannot reject from state {self._state}")
         self._state = self.REJECTED
+        self._decision_event.set()
         return False
 
     def timeout(self) -> bool:
         if self._state != self.PAUSED:
             raise ValueError(f"cannot timeout from state {self._state}")
         self._state = self.TIMEOUT
+        self._decision_event.set()
         return False
 
     def resume(self) -> None:
@@ -103,6 +109,22 @@ class HITLStateMachine:
         if self._state != self.PAUSED or self._paused_at is None:
             return False
         return self._clock() - self._paused_at >= self._approval_timeout
+
+    def await_external_decision(self, timeout: Optional[float] = None) -> str:
+        if self._state != self.PAUSED:
+            raise ValueError(f"cannot wait for decision from state {self._state}")
+        deadline = self._clock() + (self._approval_timeout if timeout is None else timeout)
+        while self._state == self.PAUSED:
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                self.timeout()
+                return "timeout"
+            self._decision_event.wait(remaining)
+        if self._state == self.APPROVED:
+            return "approved"
+        if self._state == self.REJECTED:
+            return "rejected"
+        return "timeout"
 
     def outcome(self) -> Optional[bool]:
         if self._state == self.APPROVED:
@@ -165,7 +187,7 @@ class HITLGate:
     ):
         self.engine = engine or GuardrailEngine()
         self._machine = HITLStateMachine(approval_timeout=approval_timeout, clock=clock)
-        self._decision_source = decision_source or self._machine.wait_for_decision
+        self._decision_source = decision_source or self._machine.await_external_decision
 
     @property
     def state(self) -> str:
@@ -184,13 +206,15 @@ class HITLGate:
             return False
         decision = self._decision_source()
         if decision == "approved":
-            self._machine.approve()
+            if self._machine.state != self._machine.APPROVED:
+                self._machine.approve()
             self._machine.resume()
             return True
-        if decision == "timeout":
-            self._machine.timeout()
-        else:
-            self._machine.reject()
+        if self._machine.state == self._machine.PAUSED:
+            if decision == "timeout":
+                self._machine.timeout()
+            else:
+                self._machine.reject()
         return False
 
     def approve(self) -> bool:
