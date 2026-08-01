@@ -61,3 +61,34 @@
   - PLAN.md: 每个 task 添加 "TDD 先写测试" 和 "验证步骤" 子节，新增完成清单
 - **人工干预**: 用户要求进一步规范 PLAN.md 书写
 - **教训**: PLAN.md 的 task 颗粒度需要足够细，每个 task 的验证步骤要具体到可执行的命令
+
+## 2026-08-01
+
+### [2026-08-01] — Subagent-Driven-Development 全流程执行
+
+- **技能**: `using-git-worktrees`, `subagent-driven-development`, `test-driven-development`, `requesting-code-review`, `finishing-a-development-branch`
+- **操作**: 按 SESSION-001.md 接续指南执行 18 个 task（每 task 独立 worktree + implementer subagent + task review + fix loop），最终 whole-branch review + 3 轮 fix wave + 合并回 main
+- **成果**:
+  - 18/18 tasks 完成（Phase 1-5），每 task 先红后绿 TDD + spec/quality review
+  - 关键修复: P1-02 配置合并丢失兄弟字段、P3-01 命令黑名单复合绕过、P1-04/P2-02/P2-03/P4-02 数据模型协调
+  - Final review 发现并修复 4 Critical（护栏未接线/run_shell 无限制/API 认证失败/env 后端缺失）+ 8 Important
+  - 最终 151 测试通过，ruff clean，HEAD 081b442 合并入 main
+- **人工裁决**: P4-02 timeout 默认 120 + 补 status 字段；P3-02 保留 PAUSED 终态契约 + 危险命令规则取并集
+- **教训**: 护栏（sandbox→rule engine→HITL）初版仅为库代码未接入生产路径，final review 实测暴露后补齐 runtime.py 接线——安全维度必须从第一步就端到端接线验证
+- **遗留**: 2 个 SAFE-TO-DEFER minor（`$()`-glued 遍历 pre-existing、HITL daemon 线程驻留）；git history 为最终记录，SDD workspace 已删除
+
+### [2026-08-01] — 交付物收尾与凭据自查
+
+- **技能**: `verification-before-completion`（对照 requirements.md 逐项自查）
+- **操作**:
+  - 回溯恢复 worktrees 合并前状态（fast-forward 保证 41 个 commit 全保留，18 分支 + 18 worktree 精确重建）
+  - PLAN.md 回填：18 个 task 全部标记完成并附 commit hash（1dd3738…081b442），完成清单勾选
+  - 新增机制演示 `examples/demo_mechanisms.py`（§A.6 三行为，离线确定性，全部 PASS）
+  - SPEC_PROCESS.md 补冷启动验证记录（P1-01 陌生 agent 受阻点：包名/exit 5/依赖机制）
+  - README 更新测试数与演示脚本
+- **凭据自查（§4.7 提交前）**:
+  - `git grep` 全历史扫描 `sk-` / `api_key=` / `Bearer `：所有命中均为测试假凭据（`sk-test`、`sk-abc123`、`sk-super-secret`、`sk-live-123`），无真实 key
+  - `.env` 未跟踪、`.env` 在 .gitignore；无 CLAUDE/codex history 泄露
+  - 日志脱敏已由 P1-05 + I8 修复验证
+- **人工裁决**: ① GitHub（保留 GitHub Actions，不另做 .gitlab-ci.yml）② PLAN.md 回填 + 完整 commit/PR 工作流 ③ 演示用脚本
+- **待人工**: GitHub 仓库推送与 PR 工作流、CI pass 确认、REFLECTION.md（须学生本人撰写）、线上部署 URL

@@ -141,12 +141,14 @@
 
 ### 4.2 待完成
 
-- [ ] 冷启动验证（requirements.md §4.5）— 用陌生 agent 仅凭 SPEC + PLAN 实现 1-2 个 task
-- [ ] Using-Git-Worktrees — 初始化 git 仓库，创建 worktree
-- [ ] Subagent-Driven-Development — 每个 task 派 subagent 实现
-- [ ] Test-Driven-Development — 先红后绿再重构
-- [ ] Requesting-Code-Review — 两阶段评审
-- [ ] Finishing-A-Development-Branch — 合并/PR
+- [x] 冷启动验证（requirements.md §4.5）— 用陌生 agent 仅凭 SPEC + PLAN 实现 1-2 个 task
+- [x] Using-Git-Worktrees — 初始化 git 仓库，创建 worktree
+- [x] Subagent-Driven-Development — 每个 task 派 subagent 实现
+- [x] Test-Driven-Development — 先红后绿再重构
+- [x] Requesting-Code-Review — 两阶段评审
+- [x] Finishing-A-Development-Branch — 合并/PR
+
+> **2026-08-01 完成**: 18/18 tasks 全部实现并评审通过，final whole-branch review + 3 轮 fix wave（修复 4 Critical + 8 Important），最终 151 测试通过，HEAD `081b442` 合并入 main，任务分支与 worktree 已清理。
 
 ### 4.3 当前工作目录
 

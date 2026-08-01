@@ -71,3 +71,37 @@
 ### 对流程的反思
 1. **SPEC.md 的完整性检查应该更早**: 智能体应该在 brainstorming 结束时主动检查 requirements.md 的 SPEC 要求清单，而不是等到我要求后才去做。
 2. **PLAN.md 的 TDD 细节应该更早规范**: 初始 PLAN.md 中的验证步骤不够具体，需要在后续迭代中补充。
+
+---
+
+## 自我验证：冷启动试运行记录（§4.5）
+
+正式实现前，按课程要求用**与主开发智能体不同的** agent（全新 session、不提供主对话历史、仅凭 task brief）尝试实现 P1-01（项目骨架），作为对 SPEC / PLAN 清晰度的"陌生视角"检验。
+
+### 执行方式
+- **不同 agent**: 主开发为主流程 agent；冷启动由独立 subagent 在全新 session 中执行。
+- **输入**: 仅提供 P1-01 的 task brief（从 PLAN.md 提取），不附加任何口头解释。
+- **任务**: 从 PLAN.md 自主推进 P1-01，并明确"遇到不确定之处即暂停说明，而非凭猜测继续"。
+- **产出**: P1-01 骨架 + 冷启动反馈报告（记录其受阻点与 spec 缺陷）。
+
+### 冷启动 agent 在哪里受阻 / 暂停
+1. **项目名 / 版本未在 brief 中指定**：agent 无法确定 distribution name 与 version。它查阅 SPEC §7.2 后自行采用 `harness-llm` / `0.1.0`，并明确标注"若与预期不符需在后续修正"。→ **暴露：SPEC 应在文件结构中固定精确的包名与版本值**，否则 18 个 task 可能对包名各执一词。
+2. **`pytest` 退出码语义不清**：brief 写"0 个测试被收集但运行不报错"。agent 实测 `pytest` 对"无测试"返回 **exit code 5**（非零但非错误）。它按 brief 字面接受，但指出"若 CI 要求 exit 0 此阶段会失败"。→ **暴露：验证步骤未明确"接受 exit 5 还是补一个 smoke test"**，为后续 CI 埋下歧义。
+3. **dev 依赖机制未指定**：agent 在 `[project.optional-dependencies]` 与 PEP 735 `[dependency-groups]` 之间选择，最终采用 PEP 735（pip ≥ 24.1）。→ **暴露：PLAN 未规定依赖分组机制，后续 CI 需与之保持一致**（P5-02 已据此采用 `pip install --group dev`）。
+
+### 与我原意的差异
+- 差异均属于"spec 未写清"而非"agent 读错"：agent 的选择（包名、exit 5 接受、PEP 735）事后均被验证为合理或与最终实现一致，未出现需要推翻的实现。
+
+### 产出与预期差距
+- 产物完整、可通过全部三项验证（`pip install -e .` / `python -m harness --help` / `pytest`），无功能性差距。
+
+### 据此对 SPEC / PLAN 的修订
+| 项 | 修订 | 对应 commit |
+|----|------|-------------|
+| 包名 / 版本 | SPEC §7.2 与 PLAN 统一为 `harness-llm` 0.1.0，P1-01 状态行记录 | `1dd3738` |
+| pytest exit 5 | 接受"0 测试收集、无错误"为通过标准；CI（P5-02）在存在真实测试后自然消解 | `e314545` |
+| dev 分组机制 | 全项目统一 PEP 735 `[dependency-groups]`，CI 用 `pip install --group dev` | `e314545` |
+
+### 对冷启动机制的反思
+- 冷启动确实暴露了"隐式上下文"：主开发流程中我与 agent 共享的包名/工具约定，在 brief 中并未明文写出，agent 在 P1-01 即受阻。这验证了"用陌生 agent 检验 spec 清晰度"的价值。
+- 教训：**task brief 应包含每个 task 需要的全部精确值（包名、版本、命令退出码语义、依赖机制）**，而非依赖上下文推断。
