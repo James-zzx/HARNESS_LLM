@@ -8,6 +8,7 @@ from typing import Callable, Optional, Protocol
 from harness.llm_adapter import LLMClient
 from harness.logger import TraceContext, get_logger
 from harness.memory import ConversationMemory
+from harness.message_queue import MessageQueue
 from harness.tool_executor import ToolExecutor
 
 logger = get_logger("harness.orchestrator")
@@ -20,6 +21,7 @@ LLM_CALL = "LLM_CALL"
 TOOL_EXEC = "TOOL_EXEC"
 EVAL = "EVAL"
 HITL_CHECK = "HITL_CHECK"
+USER_INPUT = "USER_INPUT"
 PAUSED = "PAUSED"
 COMPLETED = "COMPLETED"
 FAILED = "FAILED"
@@ -106,6 +108,7 @@ class Orchestrator:
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
         tool_executor: Optional[ToolExecutor] = None,
         feedback_provider: Optional[Callable[[], Optional[str]]] = None,
+        message_queue: Optional[MessageQueue] = None,
     ):
         self._llm = llm
         self._work_dir = Path(work_dir).resolve()
@@ -115,6 +118,8 @@ class Orchestrator:
         self._max_context_tokens = max_context_tokens
         self._tool_executor = tool_executor or ToolExecutor(work_dir=str(self._work_dir))
         self._feedback_provider = feedback_provider
+        self._message_queue = message_queue
+        self._interrupt_requested = False
         self._memory = ConversationMemory()
         self._state = INIT
         self._error: Optional[str] = None
@@ -160,12 +165,29 @@ class Orchestrator:
                 logger.error("orchestrator.crash", error=str(exc))
                 return self._fail(f"unexpected error: {exc}")
 
+    def interrupt(self) -> None:
+        self._interrupt_requested = True
+
     def _run_loop(self, deadline: float) -> RunResult:
         while True:
             if time.monotonic() > deadline:
                 return self._fail("timeout exceeded")
             if self._iterations >= self._task.max_iterations:
                 return self._fail("max iterations reached")
+
+            if self._message_queue is not None and (
+                self._interrupt_requested or self._message_queue.has_pending()
+            ):
+                self._interrupt_requested = False
+                self._state = USER_INPUT
+                remaining = deadline - time.monotonic()
+                messages = self._message_queue.wait_for_message(
+                    timeout=max(0.1, remaining)
+                )
+                for message in messages:
+                    if isinstance(message, dict) and isinstance(message.get("content"), str):
+                        self._memory.add_message(role="user", content=message["content"])
+                continue
 
             self._state = LLM_CALL
             self._iterations += 1

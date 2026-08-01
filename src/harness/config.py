@@ -155,6 +155,12 @@ class CredentialConfig:
     backend: str = "keyring"
 
 
+@dataclass
+class WebUIConfig:
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+
 _SECTION_CLASSES: dict[str, Any] = {
     "llm": LLMConfig,
     "sandbox": SandboxConfig,
@@ -162,6 +168,7 @@ _SECTION_CLASSES: dict[str, Any] = {
     "logging": LoggingConfig,
     "open_design": OpenDesignConfig,
     "credential": CredentialConfig,
+    "webui": WebUIConfig,
 }
 
 _SECTION_FIELDS: dict[str, set[str]] = {
@@ -177,6 +184,7 @@ class HarnessConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     open_design: OpenDesignConfig = field(default_factory=OpenDesignConfig)
     credential: CredentialConfig = field(default_factory=CredentialConfig)
+    webui: WebUIConfig = field(default_factory=WebUIConfig)
 
     def merge(self, data: Mapping[str, Any]) -> "HarnessConfig":
         if not isinstance(data, Mapping):

@@ -98,6 +98,16 @@ def test_cli_run_rejects_nonpositive_timeout(tmp_path):
     assert "Traceback" not in result.output
 
 
+def test_cli_dashboard_help():
+    result = CliRunner().invoke(cli, ["dashboard", "--help"])
+
+    assert result.exit_code == 0
+    assert "--host" in result.output
+    assert "--port" in result.output
+    assert "127.0.0.1" in result.output
+    assert "8000" in result.output
+
+
 def test_cli_webui_disabled_prints_message(tmp_path):
     config = tmp_path / "harness.yaml"
     config.write_text("open_design:\n  enabled: false\n", encoding="utf-8")

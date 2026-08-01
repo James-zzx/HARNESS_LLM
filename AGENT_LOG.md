@@ -107,3 +107,20 @@
   - 建议3: 新增 `python-dotenv` 依赖，`load_config` 自动加载 `.env`（不覆盖已有环境变量）；新增 4 测试
 - **成果**: 155 测试通过（+4），ruff clean；提交待推送
 - **教训**: main reset 重写历史会丢失"不在任何任务分支上的收尾文档 commit"——应先把文档 commit 合并进某分支再 reset，或用 cherry-pick 恢复
+
+## 2026-08-02
+
+### [2026-08-02] — Phase 6 WebUI Dashboard 与运行时对话
+
+- **技能**: `using-git-worktrees`, `subagent-driven-development`, `test-driven-development`, `verification-before-completion`
+- **操作**: 在独立 worktree `p6-dashboard` 上按 P6-01..P6-06 顺序完成 Phase 6，每 task 先红后绿 TDD
+- **成果**:
+  - P6-01 `41e685b` MessageQueue：线程安全消息队列（Lock + Event 事件等待，push 唤醒等待者）
+  - P6-02 `daf4fbf` Orchestrator 新增 `USER_INPUT` 状态，未传 message_queue 时行为与现状一致（向后兼容）
+  - P6-03 `f9aec63` REST 对话端点：`POST /api/tasks/{id}/message` / `GET /api/tasks/{id}/messages` / `POST /api/tasks/{id}/interrupt`
+  - P6-04 `60ed6bb` 零依赖 Dashboard 静态前端（任务列表/HITL 按钮/运行时对话/文件上传/连接状态灯，无 CDN、无外部引用，全部内联）
+  - P6-05 `ce14561` `harness dashboard` CLI（`--host`/`--port`/`--config`）与 `config.webui` section（默认 `127.0.0.1:8000`）
+  - P6-06 `7a16d6e` README/PLAN/AGENT_LOG 文档收尾
+  - 最终 180 测试通过，ruff clean
+- **人工裁决**: Dashboard 硬性约束为开箱即用、零外部依赖（不依赖 Open Design、无 CDN/外部资源）；Open Design 保持可选增强（`harness webui`），未安装/未启用不影响 Dashboard 与全部 CLI/REST API 功能
+- **教训**: 把"零外部依赖"这类非功能性约束转成可回归的确定性断言——`test_dashboard_no_external_refs` 校验 index.html 无 `http(s)://` 外部资源引用，避免前端后续引入 CDN 而不自知

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent Harness · 控制台</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/webui/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <h1 class="brand">AI Agent Harness</h1>
+    <div class="topbar-actions">
+      <span id="conn-status" class="conn-status conn-mid" title="API 连接状态">
+        <span class="conn-dot"></span>
+        <span id="conn-label">连接中…</span>
+      </span>
+      <button id="new-task-btn" class="btn btn-primary" type="button">新任务</button>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="task-pane">
+    <div class="pane-header"><h2>任务列表</h2></div>
+    <ul id="task-list" class="task-list"></ul>
+    <div id="task-list-empty" class="empty-hint">暂无任务，点击右上角「新任务」创建</div>
+  </aside>
+
+  <section class="detail-pane" id="task-detail">
+    <div id="detail-empty" class="empty-hint">从左侧选择一个任务查看详情</div>
+
+    <div id="detail-content" class="detail-content hidden">
+      <div class="detail-head">
+        <div class="detail-title-row">
+          <h2 id="detail-title" class="detail-title"></h2>
+          <span id="detail-status" class="badge badge-pending"></span>
+          <span id="interrupt-wrap" class="hidden">
+            <button id="interrupt-btn" class="btn btn-danger-ghost" type="button">中断</button>
+          </span>
+        </div>
+      </div>
+
+      <dl class="meta">
+        <dt>任务 ID</dt>
+        <dd id="meta-id"></dd>
+        <dt>Prompt</dt>
+        <dd id="meta-prompt"></dd>
+        <dt>评估命令</dt>
+        <dd id="meta-eval"></dd>
+        <dt>迭代进度</dt>
+        <dd id="meta-iterations"></dd>
+        <dt>超时时间</dt>
+        <dd id="meta-timeout"></dd>
+      </dl>
+
+      <div id="meta-error" class="callout callout-error hidden"></div>
+      <div id="meta-feedback" class="callout callout-warn hidden"></div>
+
+      <div id="hitl-actions" class="hitl-actions hidden">
+        <span class="hitl-hint">任务等待人工批准</span>
+        <button id="hitl-approve" class="btn btn-approve" type="button">批准</button>
+        <button id="hitl-reject" class="btn btn-reject" type="button">拒绝</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>运行日志</h3></div>
+        <pre id="log-area" class="log-area"></pre>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>对话</h3></div>
+        <div id="conversation" class="conversation"></div>
+        <div class="conversation-input-row">
+          <button id="upload-button" class="btn" type="button">上传文件</button>
+          <input type="file" id="file-input" class="hidden" accept=".txt,.md,.json,.yaml,.yml,.py,.sh,.log">
+          <textarea id="message-input" class="message-input" rows="2" placeholder="输入消息…（Ctrl+Enter 发送）"></textarea>
+          <button id="send-button" class="btn btn-primary" type="button">发送</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="modal-backdrop" class="modal-backdrop hidden">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <h2 id="modal-title">新建任务</h2>
+      <button id="modal-close" class="btn btn-ghost" type="button" aria-label="关闭">✕</button>
+    </div>
+
+    <div class="toggle-row" role="tablist">
+      <button id="tab-form" class="tab tab-active" type="button" role="tab">表单</button>
+      <button id="tab-yaml" class="tab" type="button" role="tab">YAML</button>
+    </div>
+
+    <form id="task-form">
+      <div id="form-fields">
+        <label class="field">任务 ID<span class="required">*</span>
+          <input type="text" id="field-id" required autocomplete="off" placeholder="如 webui-demo-001">
+        </label>
+        <label class="field">Prompt<span class="required">*</span>
+          <textarea id="field-prompt" rows="4" required placeholder="描述要执行的任务目标"></textarea>
+        </label>
+        <label class="field">评估命令（可选）
+          <input type="text" id="field-eval" autocomplete="off" placeholder="如 pytest tests -q">
+        </label>
+        <div class="field-row">
+          <label class="field">最大迭代
+            <input type="number" id="field-iterations" value="10" min="1" step="1">
+          </label>
+          <label class="field">超时（秒）
+            <input type="number" id="field-timeout" value="120" min="1" step="1">
+          </label>
+        </div>
+      </div>
+
+      <div id="yaml-fields" class="hidden">
+        <label class="field">任务 YAML（扁平键值）
+          <textarea id="yaml-input" rows="14" spellcheck="false" placeholder="id: my-task&#10;prompt: 修复所有 lint 错误&#10;eval_command: pytest tests -q&#10;max_iterations: 10&#10;timeout: 120"></textarea>
+        </label>
+      </div>
+
+      <div id="form-error" class="callout callout-error hidden"></div>
+
+      <div class="modal-actions">
+        <button type="button" id="form-cancel" class="btn">取消</button>
+        <button type="submit" id="form-submit" class="btn btn-primary">提交任务</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script src="/static/webui/app.js"></script>
+</body>
+</html>
