@@ -17,6 +17,7 @@
 | US-3 | 验证代码质量 | 开发者 | 作为开发者，我希望 agent 修改代码后自动运行 `make test`，如果测试失败则让 agent 修正，直到测试通过或达到最大迭代次数。 | 配置 `eval_command: make test` 后，agent 每次修改代码后自动运行测试，失败则重试。 |
 | US-4 | 安全配置 API Key | 开发者 | 作为开发者，我不想在配置文件或环境变量中明文存储 API Key，希望 harness 提供安全的录入和存储方式。 | 首次运行 `harness cred set` 时隐藏输入，`harness cred list` 不显示明文。 |
 | US-5 | 通过 WebUI 监控任务 | 开发者 | 作为开发者，我希望通过浏览器查看任务执行状态、日志和结果，并能通过 WebUI 审批或拒绝 HITL 暂停请求。 | 启动 harness 后通过浏览器访问 WebUI，可看到任务列表、状态和 HITL 审批按钮。 |
+| US-8 | 运行时对话介入 | 开发者 | 作为开发者，我希望在任务运行过程中能通过 WebUI 直接打字给 agent 发送消息（如"换一种思路""不要改动测试文件"），也能上传本地文件把内容作为消息发送，从而中途指导 agent。 | 任务运行时，用户在 WebUI 对话区发送消息或上传文件，agent 收到后调整后续动作。 |
 | US-6 | 脱离 LLM 测试 | 开发者 | 作为测试者，我想在不连接真实 LLM 的情况下验证 harness 的核心逻辑（拦截、反馈、循环），确保每次测试结果确定。 | 使用 MockLLM 替换真实 LLM 后，运行 `pytest` 所有测试通过，不依赖网络。 |
 | US-7 | 并行运行多个任务 | 开发者 | 作为开发者，我希望同时运行多个独立任务，它们互不干扰，各自有独立的沙箱和日志。 | 同时提交两个任务，它们并行执行，各自的日志和状态独立。 |
 
@@ -24,7 +25,7 @@
 
 ### 模块 1: Task Definition & Execution
 - **输入**: YAML/JSON 任务文件
-- **接口**: CLI (`harness run task.yaml`), REST API (FastAPI), Open Design WebUI
+- **接口**: CLI (`harness run task.yaml`), REST API (FastAPI), WebUI Dashboard (`harness dashboard`), Open Design WebUI（可选）
 - **输出**: 任务执行结果
 - **关键文件**: `src/harness/cli.py`, `src/harness/api.py`, `src/harness/open_design.py`, `src/harness/task.py`
 
@@ -88,23 +89,44 @@
 - **测试基座**: `BaseHarnessTest` 提供 mock_llm, config, orchestrator 等 fixture
 - **关键文件**: `src/harness/llm_adapter.py`, `src/harness/mock_llm.py`, `src/tests/base.py`
 
-### 模块 13: Open Design Integration (WebUI/Design Layer)
-- **方案**: 集成 Open Design (https://github.com/nexu-io/open-design) 作为 WebUI 和设计层
+### 模块 13: WebUI Dashboard & Open Design Integration (WebUI/Design Layer)
+- **方案**: **Harness 内建开箱即用的图形化 Dashboard**（方式 B，无需安装 Open Design 即可使用）；同时用 **Open Design 进行设计风格与界面排版布局的开发**，并以 Open Design 为可选预览/增强层
 - **架构**:
-  - Harness 启动 `od` daemon 作为托管的子进程（`--headless --no-open`）
-  - 通过 HTTP API（`http://127.0.0.1:7456`）与 daemon 通信
-  - 通过 `OD_DATA_DIR` 环境变量隔离数据目录
-- **集成功能**:
-  - **任务界面**: Open Design 的 WebUI 显示 Harness 的任务状态、日志、评估结果
-  - **HITL 审批面板**: Open Design 插件接收 HITL 暂停事件，提供批准/拒绝按钮
+  - **内建 Dashboard（主要，开箱即用）**: `src/harness/webui/`（静态 HTML/CSS/JS），由 FastAPI 挂载，与 REST API 同源（127.0.0.1:8000），浏览器直接访问，无需安装任何额外软件
+  - **Open Design 集成（可选增强）**: 若用户安装了 Open Design，`harness webui` 命令可启动 `od` daemon（`--headless --no-open`），通过 HTTP API 通信，用其 WebUI 预览/承载；`OpenDesignClient` 封装 daemon REST API
+- **Dashboard 功能**:
+  - **任务操作面板**: 提交任务（表单或粘贴 YAML）、任务列表、状态徽章、日志实时刷新、HITL 审批按钮
+  - **运行时对话**: 任务运行中用户可打字给 agent 发消息，或点击"上传文件"按钮读取本地文件内容填入消息框后发送；agent 收到后调整动作（orchestrator 新增 USER_INPUT 状态）
+  - **连接状态**: 顶栏状态灯指示 API 连通性
+- **Open Design 集成功能（可选）**:
+  - **任务界面**: Open Design WebUI 显示 Harness 任务状态、日志、评估结果（复用内建 dashboard 页面）
+  - **HITL 审批面板**: 插件接收 HITL 暂停事件，提供批准/拒绝按钮
   - **Artifact 预览**: 使用 Open Design 的 iframe 沙箱预览 agent 生成的 HTML 产物
-  - **设计系统**: 通过 `DESIGN.md` 定义 Harness 自身的品牌和 UI 风格
-- **所选设计系统与 skill**: 使用 Open Design 内置的 `minimal` 设计系统（基础排版、配色、组件），skill 为 `harness-dashboard`（自定义 skill，用于任务监控和 HITL 审批）
-- **集成方式**: 三种路径并存
+- **所选设计系统与 skill**: 设计风格采用 Open Design 内置的 `minimal` 设计系统（基础排版、配色、组件），用于 dashboard 的视觉与排版布局开发；skill 为 `harness-dashboard`（自定义 skill，定义任务监控 + HITL 审批 + 运行时对话的界面规范）
+- **集成方式（Open Design 可选）**: 三种路径并存
   - **HTTP API 客户端**（主要）: `OpenDesignClient` 封装对 daemon REST API 的调用
   - **CLI 子进程包装器**（备用）: 通过 `od` 命令行执行操作
   - **MCP stdio 客户端**（可选）: 通过 MCP 协议与 daemon 的 stdio 服务器通信
-- **关键文件**: `src/harness/open_design.py`, `src/tests/test_open_design.py`
+- **关键文件**: `src/harness/webui/`, `src/harness/api.py`, `src/harness/open_design.py`, `src/harness/dashboard.py`, `src/tests/test_dashboard.py`, `src/tests/test_open_design.py`
+
+### 模块 14: WebUI Dashboard & 运行时对话
+- **方案**: 内建开箱即用的图形化操作面板（方式 B），支持任务监控、HITL 审批、运行时对话介入
+- **Dashboard 界面**:
+  - 单页应用（HTML/CSS/JS），与 REST API 同源（127.0.0.1:8000），由 FastAPI `StaticFiles` 挂载
+  - 顶栏（标题 + "新任务"按钮 + 连接状态灯）、任务列表（状态徽章）、任务详情（元数据 + 日志区 + HITL 审批按钮 + 对话区）、新任务弹窗（表单或粘贴 YAML）
+  - 每 2 秒轮询任务列表/详情/日志；HITL 暂停时显示批准/拒绝按钮
+  - 设计风格采用 Open Design `minimal` 设计系统（色板、字体、排版）
+- **运行时对话**:
+  - orchestrator 新增状态 `USER_INPUT`: 每轮 LLM 调用前检查 `MessageQueue` 是否有新用户消息；有则暂停等待（事件机制，同 HITL `await_external_decision`），收到消息后作为 `role="user"` 加入记忆并继续
+  - 用户随时可发消息或上传文件（浏览器 FileReader 读内容填入消息框，可编辑后发送）；消息框始终可打字输入
+  - 与 HITL 关系: 独立 USER_INPUT 状态（自由消息）与 PAUSED（危险审批）并存，HITL 优先
+- **新增 REST API 端点**:
+  - `POST /api/tasks/{id}/message` — 发送用户消息（body: `{content}`），唤醒 USER_INPUT
+  - `GET /api/tasks/{id}/messages` — 获取对话历史
+  - `POST /api/tasks/{id}/interrupt` — 主动打断任务进入 USER_INPUT 等待
+- **新增 CLI**: `harness dashboard [--host 127.0.0.1] [--port 8000] [--config PATH]` — 启动 uvicorn 加载 API + 静态 dashboard，打印 URL，Ctrl+C 停止
+- **配置**: `HarnessConfig` 新增 `webui` 段（`host` / `port`，默认 127.0.0.1 / 8000）；CLI 参数可覆盖
+- **关键文件**: `src/harness/webui/`（index.html, app.js, style.css）, `src/harness/dashboard.py`, `src/harness/message_queue.py`, `src/tests/test_dashboard.py`, `src/tests/test_message_queue.py`
 
 ## 4. 非功能性需求
 
@@ -136,22 +158,29 @@
 ## 5. 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│         CLI / REST API (FastAPI) / Open Design WebUI     │  ← 模块 1
-└──────────────┬──────────────────────────┬───────────────┘
-               │                          │
-┌──────────────▼──────────┐  ┌────────────▼──────────────┐
-│  Declarative Config     │  │  Open Design Daemon (od)  │  ← 模块 13
-│  Credential Store       │  │  · WebUI (Next.js)        │
-│  (OS Keychain)          │  │  · REST API (Express)     │
-└──────────────┬──────────┘  │  · MCP stdio server       │
-               │             │  · Design system registry  │
-               │             │  · Artifact preview/export  │
-               │             └────────────────────────────┘
-               │                          │
-               │              HTTP / subprocess
-               │                          │
-┌──────────────▼──────────────────────────▼──────────────┐
+┌─────────────────────────────────────────────────────────────────┐
+│  CLI / REST API (FastAPI) / WebUI Dashboard / Open Design WebUI  │  ← 模块 1, 13, 14
+└───────────────┬──────────────────────────┬──────────────────────┘
+                │                          │
+┌───────────────▼──────────┐  ┌────────────▼──────────────────────┐
+│  Declarative Config      │  │  WebUI Dashboard (内建)            │  ← 模块 14
+│  Credential Store        │  │  · index.html / app.js / style.css│
+│  (OS Keychain)           │  │  · 任务表单/列表/日志/HITL/对话     │
+└───────────────┬──────────┘  │  · fetch() 同源调 REST API         │
+                │             └────────────┬──────────────────────┘
+                │                          │
+┌───────────────▼──────────┐  ┌────────────▼──────────────────────┐
+│  Orchestrator (主循环)    │  │  Open Design Daemon (od) 【可选】  │  ← 模块 13
+│  · Tool Executor         │  │  · WebUI (Next.js)                │
+│  · Sandbox               │  │  · REST API                       │
+│  · HITL 状态机           │  │  · MCP stdio server               │
+│  · MessageQueue (对话)   │  │  · Design system registry         │
+│  · Memory / Evaluator    │  │  · Artifact preview/export        │
+└───────────────┬──────────┘  └────────────────────────────────────┘
+                │
+                └── HTTP / subprocess ──────────┐
+                                                │
+┌───────────────▼───────────────────────────────▼────────────────┐
 │              Main Loop / Orchestrator                   │  ← 模块 6
 │  ┌──────────┐ ┌──────────┐ ┌──────────────────────┐   │
 │  │Task Exec │ │Tool Exec │ │Governance & HITL     │   │  ← 模块 5, 7
@@ -256,9 +285,23 @@ HarnessConfig 1──1 CredentialStore
 HarnessConfig 1──* Task
 Task 1──1 ConversationMemory
 Task 1──* Message
+Task 1──1 MessageQueue        # 运行时对话（用户消息 → agent）
 Message 0──* ToolCall
 ToolCall 1──1 ToolResult
 Task 1──0..1 EvaluationResult
+```
+
+### 6.8 MessageQueue（运行时对话队列）
+```
+MessageQueue {
+  task_id: str                      # 关联任务
+  pending: list[Message]            # 待 agent 消费的用户消息（线程安全）
+  lock: threading.Lock              # 并发保护
+}
+- push(message)                     # API 写入用户消息并唤醒等待
+- pop_all() -> list[Message]        # orchestrator 消费，清空待处理
+- has_pending() -> bool             # 是否有未消费消息
+- event: threading.Event            # 供 await_user_input 等待
 ```
 
 ## 7. 凭据与分发设计
@@ -318,7 +361,8 @@ Task 1──0..1 EvaluationResult
 | 模块 10: Credential | Key 存储后可用程序读取；list 不显示明文；delete 后无法读取 |
 | 模块 11: CI/CD | `docker build` 成功；`pytest` 在 CI 中通过 |
 | 模块 12: MockLLM | MockLLM 按预设顺序返回响应；替换真实 LLM 后所有测试仍通过 |
-| 模块 13: Open Design | `od` daemon 可被启动/停止；WebUI 可访问并显示任务状态 |
+| 模块 13: Open Design | `od` daemon 可被启动/停止；WebUI 可访问并显示任务状态（可选增强） |
+| 模块 14: Dashboard | `harness dashboard` 启动后浏览器可访问；任务提交/列表/日志/HITL 审批可用；运行时对话与文件上传可发送消息给 agent |
 
 ## 10. 风险与未决问题
 
@@ -327,9 +371,11 @@ Task 1──0..1 EvaluationResult
 | R1: OS 钥匙串不可用（如容器环境） | 凭据无法安全存储 | 中 | 降级到加密文件 + 主密码；容器中推荐环境变量 + 文档提示风险 |
 | R2: subprocess 沙箱在 Windows 上限制不完整 | 沙箱绕过 | 中 | 优先实现 Linux 沙箱，Windows 提供基础进程隔离 |
 | R3: LLM 返回格式不稳定（JSON 解析失败） | 主循环卡死 | 高 | 解析失败时重试 + 格式要求注入系统提示 |
-| R4: 用户未安装 Open Design | WebUI 不可用 | 中 | CLI 和 API 作为主要交互方式，WebUI 为可选增强 |
+| R4: 用户未安装 Open Design | Open Design WebUI 不可用 | 低 | **内建 Dashboard 开箱即用**（无需 Open Design）；Open Design 为可选预览增强 |
 | R5: 长时间运行任务导致内存泄漏 | 进程崩溃 | 低 | 设置最大迭代次数和超时；定期清理 Memory |
 | R6: MockLLM 与真实 LLM 行为差异大 | 测试覆盖不足 | 低 | 在 SPEC 中明确 MockLLM 的边界，补充集成测试 |
+| R7: 运行时对话导致 agent 行为偏离任务目标 | 任务结果不符合预期 | 中 | 用户消息记录在记忆/日志；USER_INPUT 超时自动继续；可随时 interrupt 恢复 |
+| R8: dashboard 轮询高频造成 API 压力 | 性能下降 | 低 | 默认 2s 轮询；日志区仅增量请求；HITL 状态变化时优先刷新 |
 
 ## 11. 领域与机制设计
 
@@ -407,6 +453,8 @@ Task 1──0..1 EvaluationResult
 | 记忆读写 | `memory.py` | `test_memory.py` | ✅ 直接添加/读取消息 |
 | 主循环状态机 | `orchestrator.py` | `test_orchestrator.py` | ✅ MockLLM 预设响应 |
 | 配置加载 | `config.py` | `test_config.py` | ✅ 直接加载配置文件 |
+| 运行时对话 | `message_queue.py` + `orchestrator.py` (USER_INPUT) | `test_message_queue.py` + `test_orchestrator.py` | ✅ 注入用户消息 → MockLLM 行为变化 |
+| Dashboard | `webui/` + `dashboard.py` + `api.py` | `test_dashboard.py` | ✅ TestClient 验证页面/端点 |
 
 ## 12. 实现顺序
 
@@ -450,6 +498,17 @@ Task 1──0..1 EvaluationResult
 16. README 完善
 ```
 
+### Phase 6 — WebUI Dashboard 与运行时对话（模块 14）
+```
+17. MessageQueue（运行时对话队列，线程安全）
+18. Orchestrator USER_INPUT 状态（检查新消息 → 暂停等待 → 注入记忆继续）
+19. REST API 新增端点（message / messages / interrupt）
+20. WebUI Dashboard 前端（index.html + app.js + style.css，minimal 设计系统风格）
+21. `harness dashboard` CLI 命令（uvicorn + 静态挂载）
+22. 测试 + README/SPEC 文档收尾
+```
+- **可测试**: 对话介入通过 MockLLM 离线确定性测试；Dashboard 页面通过 TestClient 验证
+
 ## 13. 文件结构
 
 ```
@@ -461,7 +520,8 @@ harness_LLM/
 │   │   ├── main.py              # CLI 入口点
 │   │   ├── cli.py               # CLI 命令实现
 │   │   ├── api.py               # FastAPI REST API
-│   │   ├── open_design.py       # Open Design 集成层 (daemon 管理 + HTTP 客户端)
+│   │   ├── dashboard.py         # WebUI Dashboard 启动（harness dashboard）
+│   │   ├── open_design.py       # Open Design 集成层 (daemon 管理 + HTTP 客户端, 可选)
 │   │   ├── config.py            # 配置系统
 │   │   ├── credential_store.py  # 凭据存储
 │   │   ├── orchestrator.py      # 主循环/编排器
@@ -472,8 +532,13 @@ harness_LLM/
 │   │   ├── tool_executor.py     # 工具/动作执行器
 │   │   ├── hitl.py              # 治理护栏与 HITL
 │   │   ├── memory.py            # 上下文与记忆管理
+│   │   ├── message_queue.py     # 运行时对话队列（USER_INPUT）
 │   │   ├── llm_adapter.py       # LLM 客户端接口
-│   │   └── mock_llm.py          # Mock LLM 实现
+│   │   ├── mock_llm.py          # Mock LLM 实现
+│   │   └── webui/               # Dashboard 静态前端（开箱即用）
+│   │       ├── index.html       # 单页应用
+│   │       ├── app.js           # 交互逻辑（轮询/表单/对话/文件上传）
+│   │       └── style.css        # minimal 设计系统风格
 │   └── tests/
 │       ├── __init__.py
 │       ├── conftest.py          # pytest fixtures
@@ -485,11 +550,14 @@ harness_LLM/
 │       ├── test_logger.py
 │       ├── test_tool_executor.py
 │       ├── test_memory.py
+│       ├── test_message_queue.py
 │       ├── test_orchestrator.py
 │       ├── test_sandbox.py
 │       ├── test_hitl.py
 │       ├── test_evaluator.py
 │       ├── test_task.py
+│       ├── test_api.py
+│       ├── test_dashboard.py
 │       └── test_open_design.py
 ├── examples/
 │   └── task.yaml                # 示例任务文件
@@ -514,6 +582,15 @@ harness_LLM/
 | E2E | pytest + subprocess | 完整任务执行流程，使用 MockLLM |
 
 **关键原则**: 所有模块 5-8 的测试必须通过 MockLLM 验证，不依赖真实网络/LLM。
+
+**Dashboard / 对话测试**:
+| 目标 | 测试 |
+|------|------|
+| orchestrator 对话介入 | `test_orchestrator_user_input`: MockLLM 预设暂停 → 注入用户消息 → agent 改变下一步（离线确定性） |
+| 对话超时 | `test_orchestrator_user_input_timeout`: 超时后自动继续 |
+| MessageQueue | `test_message_queue`: push/pop/has_pending/唤醒事件 |
+| API 对话端点 | `test_api_send_message` / `test_api_get_messages` / `test_api_interrupt` |
+| Dashboard 页面 | `test_dashboard`: 页面 GET 可访问、静态资源加载、与 API 集成（TestClient） |
 
 **机制演示**（见 §A.6）:
 1. **治理护栏**: 传入 `Action("rm -rf /")` → `GuardrailResult(intercepted=True)` — 确定性测试
