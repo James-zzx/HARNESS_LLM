@@ -5,8 +5,8 @@
 - **Python**: 3.11+
 - **发行包**: `harness-llm`（PyPI）/ 镜像 `harness`（Docker）
 - **CLI**: `harness`（`python -m harness`）
-- **命令**: `run` / `webui` / `cred` / `config` / `init`
-- **接口**: CLI + FastAPI REST API + Open Design WebUI
+- **命令**: `run` / `dashboard` / `webui` / `cred` / `config` / `init`
+- **接口**: CLI + FastAPI REST API + 内置 Dashboard + Open Design WebUI（可选）
 
 ## 快速开始
 
@@ -70,6 +70,7 @@ python -m harness [OPTIONS] COMMAND [ARGS]...
 Commands:
   config  Inspect the effective harness configuration.
   cred    Manage credentials stored securely in the OS keyring.
+  dashboard  Serve the web dashboard (REST API + static UI) via uvicorn.
   init    Create a default harness.yaml in the current directory.
   run     Run a task definition (YAML) through the harness.
   webui   Start the Open Design daemon and print its web UI URL.
@@ -133,9 +134,44 @@ python -m harness webui [--config PATH]
 
 读取配置：`open_design.enabled: true` 时启动 `od` 守护进程并打印 Web UI 地址，`Ctrl+C` 停止并回收守护进程；未启用时提示设置 `open_design.enabled: true` 并以退出码 0 返回。详见「Open Design WebUI（可选）」。
 
+### `dashboard` — 启动图形化界面
+
+```bash
+python -m harness dashboard [--host HOST] [--port PORT] [--config PATH]
+```
+
+启动内置的零依赖 Web Dashboard（REST API + 静态前端），默认地址 `http://127.0.0.1:8000/`，`Ctrl+C` 优雅停止：
+
+- `--host` — 监听地址（默认 `127.0.0.1`，可由 `config.webui.host` 配置）。
+- `--port` — 监听端口（默认 `8000`，可由 `config.webui.port` 配置）。
+- `--config` — 指定 harness 配置文件路径（CLI 参数覆盖配置文件）。
+
+功能、零外部依赖说明与 Open Design 的关系详见「图形化界面（Dashboard）」。
+
+## 图形化界面（Dashboard）
+
+内置 Web 图形界面，`harness dashboard` 启动后浏览器访问 `http://127.0.0.1:8000/` 即可使用。
+
+### 功能
+
+- **任务提交**：表单或 YAML 两种方式提交新任务（`POST /api/tasks`）。
+- **任务列表**：客户端本地维护任务列表（localStorage），逐任务轮询状态并显示状态徽章（PENDING 灰 / RUNNING 蓝 / PAUSED 琥珀 / COMPLETED 绿 / FAILED 红）。
+- **状态与日志**：轮询 `GET /api/tasks/{id}` 与 `GET /api/tasks/{id}/logs`，日志区自动刷新并自动滚到底部（用户上滚时暂停自动滚动）。
+- **HITL 审批**：任务处于 `PAUSED` 时显示 [批准] / [拒绝] 按钮，调用 `POST /api/hitl/{id}/approve|reject` 一键完成人工审批。
+- **运行时对话**：任务运行中可直接输入消息发送给 Agent（`POST /api/tasks/{id}/message`），或 [上传文件]——文件内容通过 FileReader 读入并填入消息框，可编辑后发送；消息框始终可打字。
+- **连接状态灯**：顶部实时显示与 API 的连接状态，API 不可达时显示红灯并提示。
+
+### 零外部依赖
+
+Dashboard 开箱即用：`pip install harness-llm`（或 `pip install -e .`）后直接运行 `python -m harness dashboard` 即可，无需 Open Design、无需任何插件、无 CDN 与外部资源引用——所有 HTML/CSS/JS 均为包内静态文件并全部内联（`src/harness/webui/`）。
+
+### 与 Open Design 的关系（可选）
+
+Dashboard 是独立的内置界面，不依赖 Open Design。Open Design 仅是可选的设计/预览增强：若安装并启用（`harness webui`，需 `open_design.enabled: true`），可额外获得基于 Open Design 的 WebUI；未安装或未启用时，Dashboard 与全部 CLI/REST API 功能不受任何影响。
+
 ## 配置说明
 
-配置文件为 YAML（也支持 JSON），包含 6 个 section：
+配置文件为 YAML（也支持 JSON），包含 7 个 section：
 
 | Section | 关键字段 | 默认值 | 说明 |
 |---------|---------|--------|------|
@@ -144,6 +180,7 @@ python -m harness webui [--config PATH]
 | `hitl` | `enabled` / `dangerous_commands` / `approval_timeout` | `enabled: true`, `approval_timeout: 300` | 危险命令规则引擎与 HITL 审批超时；`dangerous_commands` 默认并集 `["rm -rf", "shutdown", "format", "dd if=", "git push --force", "DROP TABLE"]` |
 | `logging` | `level` / `format` / `file_path` | `level: INFO`, `format: console` | 结构化日志；`format: json` 输出 JSON，`file_path` 开启 JSON 日志文件 |
 | `open_design` | `enabled` / `port` / `data_dir` / `daemon_url` | `enabled: false`, `port: 3000`, `data_dir: .open_design` | Open Design WebUI 集成 |
+| `webui` | `host` / `port` | `host: 127.0.0.1`, `port: 8000` | 内置 Dashboard 监听地址与端口（`harness dashboard` 的 `--host`/`--port` 覆盖此项） |
 | `credential` | `service` / `backend` | `service: harness`, `backend: keyring` | 凭据存储后端：`keyring`（OS 钥匙串）或 `env`（环境变量）。`env` 从 `HARNESS_<SERVICE>_<KEY>` 读取（如 `llm/api_key` → `HARNESS_LLM_API_KEY`），值在进程环境中明文可见 |
 
 完整可注释示例见 [examples/config.yaml](examples/config.yaml)。
@@ -207,7 +244,7 @@ export HARNESS_SANDBOX_NETWORK=allow
 └──────────────────────────────────────────────────────────┘
 ```
 
-- **模块**（`src/harness/`）：`cli.py`/`main.py`（CLI）、`api.py`（FastAPI）、`config.py`（配置）、`credential_store.py`（凭据）、`orchestrator.py`（主循环）、`task.py`（任务解析）、`sandbox.py`（沙箱）、`hitl.py`（治理 + HITL 状态机）、`tool_executor.py`（工具执行）、`memory.py`（记忆/上下文）、`evaluator.py`（评估）、`logger.py`（日志/追踪）、`llm_adapter.py` + `mock_llm.py`（LLM 适配）、`open_design.py`（WebUI 集成）。
+- **模块**（`src/harness/`）：`cli.py`/`main.py`（CLI）、`api.py`（FastAPI）、`config.py`（配置）、`credential_store.py`（凭据）、`orchestrator.py`（主循环）、`task.py`（任务解析）、`sandbox.py`（沙箱）、`hitl.py`（治理 + HITL 状态机）、`tool_executor.py`（工具执行）、`memory.py`（记忆/上下文）、`evaluator.py`（评估）、`logger.py`（日志/追踪）、`llm_adapter.py` + `mock_llm.py`（LLM 适配）、`message_queue.py`（运行时消息队列）、`dashboard.py`（Dashboard 服务）、`webui/`（内置前端静态资源）、`open_design.py`（WebUI 集成）。
 
 ### 状态机
 
@@ -292,7 +329,7 @@ python -m pip install --group dev -e .   # 安装包 + dev 依赖（pytest / pyt
 ### 运行测试
 
 ```bash
-python -m pytest src/tests/                # 全部测试（当前 151 个，全部通过）
+python -m pytest src/tests/                # 全部测试（当前 180 个，全部通过）
 python -m pytest --cov=harness src/tests/  # 覆盖率
 python -m ruff check src/                  # Lint
 ```
@@ -340,6 +377,9 @@ python -m uvicorn harness.api:app
 | `GET /api/tasks/{id}/logs` | 获取任务日志 |
 | `POST /api/hitl/{task_id}/approve` | 批准 HITL 暂停请求 |
 | `POST /api/hitl/{task_id}/reject` | 拒绝 HITL 暂停请求 |
+| `POST /api/tasks/{id}/message` | 向运行中的任务发送用户消息（body `{"content": "<非空字符串>"}`），空内容返回 400，任务不存在返回 404 |
+| `GET /api/tasks/{id}/messages` | 获取任务运行时对话记录（当前为 user 消息） |
+| `POST /api/tasks/{id}/interrupt` | 请求中断任务，使其进入 `USER_INPUT` 状态等待用户输入 |
 
 API 任务默认走与 CLI 相同的真实运行时（`build_runtime` + 沙箱 + HITL），凭据通过 `build_llm` 按 `config.credential.backend` 解析；`llm.mock: true` 时离线运行，不触碰凭据存储。每个任务使用独立的 `harness-task-*` 工作目录，互不干扰。
 
