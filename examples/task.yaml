@@ -1,0 +1,8 @@
+id: fix-failing-tests
+prompt: |
+  The test suite in this repository has two failing tests.
+  Investigate the failures and fix the source code so that
+  `python -m pytest` passes with no regressions.
+eval_command: python -m pytest
+max_iterations: 10
+timeout: 120
