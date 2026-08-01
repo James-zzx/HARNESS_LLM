@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from harness.api import (
     create_app,
 )
 from harness.hitl import GuardrailEngine, HITLGate
+from harness.llm_adapter import Response
 from harness.message_queue import MessageQueue
 from harness.mock_llm import MockLLM
 from harness.orchestrator import RunResult, Task
@@ -61,6 +64,13 @@ def test_api_task_not_found():
     with _client() as client:
         response = client.get("/api/tasks/does-not-exist")
         assert response.status_code == 404
+
+
+def test_api_health_endpoint():
+    with _client() as client:
+        response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
 
 
 def test_api_default_runner_builds_llm_via_shared_helper(monkeypatch, tmp_path):
@@ -265,6 +275,89 @@ def test_api_interrupt_sets_flag_and_interrupts_live_orchestrator():
     assert response.json()["interrupt_requested"] is True
     assert manager.get_interrupt_requested("api-int") is True
     assert stub.interrupted is True
+
+
+def test_api_interrupt_e2e_default_runner_enters_user_input(tmp_path, monkeypatch):
+    first_call_started = threading.Event()
+    release_first_call = threading.Event()
+    seen = {}
+
+    def write_intent(path, content):
+        return json.dumps(
+            {
+                "thought": "writing file",
+                "tool": "write_file",
+                "params": {"path": path, "content": content},
+            }
+        )
+
+    class GatedLLM(MockLLM):
+        def __init__(self):
+            super().__init__([""])
+            self._calls = 0
+
+        def chat(self, messages):
+            self._calls += 1
+            if self._calls == 1:
+                first_call_started.set()
+                assert release_first_call.wait(timeout=10)
+                return Response(content=write_intent("e2e.txt", "v1"))
+            if self._calls == 2:
+                seen["context"] = [
+                    (message.role, message.content or "") for message in messages
+                ]
+                return Response(content=json.dumps({"done": True}))
+            return Response(content=json.dumps({"done": True}))
+
+    llm = GatedLLM()
+
+    def fake_build_llm(config, credential_store=None):
+        return llm
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    client_a = TestClient(app)
+    client_b = TestClient(app)
+
+    with client_a, client_b:
+        result = {}
+
+        def submit():
+            result["response"] = client_a.post(
+                "/api/tasks", json={"id": "e2e-int", "prompt": "write e2e.txt"}
+            )
+
+        thread = threading.Thread(target=submit)
+        thread.start()
+        try:
+            assert first_call_started.wait(timeout=10)
+            interrupt = client_b.post("/api/tasks/e2e-int/interrupt")
+            assert interrupt.status_code == 200
+            assert interrupt.json()["interrupt_requested"] is True
+            release_first_call.set()
+            time.sleep(0.3)
+            message = client_b.post(
+                "/api/tasks/e2e-int/message", json={"content": "use python instead"}
+            )
+            assert message.status_code == 200
+            thread.join(timeout=10)
+        finally:
+            release_first_call.set()
+            thread.join(timeout=10)
+
+        assert not thread.is_alive()
+        assert result["response"].status_code == 201
+        assert manager.get_interrupt_requested("e2e-int") is True
+        snapshot = client_b.get("/api/tasks/e2e-int").json()
+        assert snapshot["status"] == "completed"
+
+    assert any(
+        role == "user" and content == "use python instead"
+        for role, content in seen["context"]
+    )
 
 
 def test_api_runner_receives_task_message_queue():

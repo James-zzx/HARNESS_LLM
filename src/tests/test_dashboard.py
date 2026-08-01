@@ -53,7 +53,37 @@ def test_dashboard_no_external_refs():
         content = _read(name)
         assert "http://" not in content, name
         assert "https://" not in content, name
+        assert "url(" not in content, name
+        assert re.search(r"//[A-Za-z0-9.-]+\.[A-Za-z]{2,}", content) is None, name
     assert re.search(r"@import\b", _read("style.css")) is None
+
+
+def test_dashboard_index_assets_resolve_through_create_app():
+    from urllib.parse import urljoin
+
+    from harness.api import create_app
+
+    app = create_app(
+        runner=lambda task, gate, message_queue=None, on_orchestrator=None: None
+    )
+    with TestClient(app) as client:
+        index = client.get("/")
+        assert index.status_code == 200
+        refs = re.findall(r'(?:href|src)="([^"]+)"', index.text)
+        refs = [ref for ref in refs if not ref.startswith("data:")]
+        assert refs, "expected at least one stylesheet/script reference"
+        for ref in refs:
+            resolved = urljoin("/", ref)
+            response = client.get(resolved)
+            assert response.status_code == 200, resolved
+
+
+def test_dashboard_connection_probe_runs_without_tasks():
+    js = _read("app.js")
+    assert 'fetch("/api/health")' in js
+    probe = js.index("probeConnection()")
+    loop = js.index("for (const id of taskIds)")
+    assert 0 <= probe < loop
 
 
 def test_dashboard_markers():

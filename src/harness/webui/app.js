@@ -87,8 +87,17 @@ async function pollTask(id) {
   task.logs = logs;
 }
 
+async function probeConnection() {
+  try {
+    await fetch("/api/health");
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 async function pollOnce() {
-  let connOk = true;
+  let connOk = await probeConnection();
   for (const id of taskIds) {
     try {
       await pollTask(id);

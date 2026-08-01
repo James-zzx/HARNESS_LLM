@@ -243,6 +243,10 @@ def create_app(
             raise TaskError(f"no HITL decision pending for task: {task_id}")
         return gate
 
+    @app.get("/api/health")
+    def health():
+        return {"status": "ok"}
+
     @app.post("/api/tasks", status_code=201)
     def create_task(body: dict, background_tasks: BackgroundTasks):
         task = TaskParser.from_dict(body)

@@ -194,18 +194,19 @@ def test_orchestrator_user_input(work_dir):
 
 def test_orchestrator_user_input_timeout(work_dir):
     queue = MessageQueue(task_id="t9-timeout")
-    queue.push({"content": "改成另一种写法"})
     orch = Orchestrator(
         llm=MockLLM([_write("t.txt", "ok"), DONE]),
         work_dir=work_dir,
         message_queue=queue,
     )
+    orch.interrupt()
     start = time.monotonic()
     result = orch.run(Task(id="t9-timeout", prompt="write t.txt", timeout=2))
     elapsed = time.monotonic() - start
 
-    assert result.status == "COMPLETED"
-    assert (work_dir / "t.txt").read_text(encoding="utf-8") == "ok"
+    assert result.status == "FAILED"
+    assert "timeout" in result.error
+    assert elapsed >= 1.5
     assert elapsed < 5.0
 
 
