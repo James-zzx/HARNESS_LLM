@@ -10,6 +10,29 @@ from harness.orchestrator import RunResult
 DONE = json.dumps({"done": True})
 
 
+def test_cli_init_creates_config_with_api_key_hint(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init"])
+    assert result.exit_code == 0
+    created = tmp_path / "harness.yaml"
+    assert created.exists()
+    text = created.read_text(encoding="utf-8")
+    assert "credential_ref" in text
+    assert "backend" in text
+    assert "harness cred set" in text or "HARNESS_" in text
+    assert "mock: false" in text
+
+
+def test_cli_init_refuses_overwrite(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "harness.yaml").write_text("existing", encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init"])
+    assert result.exit_code == 1
+    assert "already exists" in result.output
+
+
 def test_cli_run(tmp_path, monkeypatch):
     task = tmp_path / "task.yaml"
     task.write_text("id: t1\nprompt: write hello\nmax_iterations: 3\n", encoding="utf-8")

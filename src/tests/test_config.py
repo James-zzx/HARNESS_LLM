@@ -15,6 +15,34 @@ def test_load_default_config():
     assert cfg.credential.service == "harness"
 
 
+def test_load_dotenv_applies_env_vars(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "HARNESS_LLM_MOCK=true\nHARNESS_LLM_MODEL=gpt-4o-mini\nHARNESS_LOGGING_LEVEL=DEBUG\n",
+        encoding="utf-8",
+    )
+    for var in ("HARNESS_LLM_MOCK", "HARNESS_LLM_MODEL", "HARNESS_LOGGING_LEVEL"):
+        monkeypatch.delenv(var, raising=False)
+
+    cfg = load_config(dotenv_path=str(env_file))
+
+    assert cfg.llm.mock is True
+    assert cfg.llm.model == "gpt-4o-mini"
+    assert cfg.logging.level == "DEBUG"
+
+
+def test_load_dotenv_does_not_override_existing_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / ".env"
+    env_file.write_text("HARNESS_LLM_MODEL=from-dotenv\n", encoding="utf-8")
+    monkeypatch.setenv("HARNESS_LLM_MODEL", "from-env")
+
+    cfg = load_config(dotenv_path=str(env_file))
+
+    assert cfg.llm.model == "from-env"
+
+
 def test_load_yaml_config(work_dir):
     cfg_file = work_dir / "config.yaml"
     cfg_file.write_text(

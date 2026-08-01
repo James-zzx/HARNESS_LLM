@@ -5,6 +5,12 @@ from typing import Any, Mapping, Optional, get_args, get_origin, get_type_hints
 
 import yaml
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - dependency optional in exotic installs
+    def load_dotenv(dotenv_path=None, override=False, verbose=False):
+        return False
+
 ENV_PREFIX = "HARNESS_"
 
 
@@ -226,8 +232,10 @@ def _extract_env(env: Mapping[str, str]) -> dict[str, dict[str, str]]:
     return extracted
 
 
-def load_config(path: Optional[str] = None, env: Optional[Mapping[str, str]] = None) -> HarnessConfig:
-    env = os.environ if env is None else env
+def load_config(path: Optional[str] = None, env: Optional[Mapping[str, str]] = None, dotenv_path: Optional[str] = ".env") -> HarnessConfig:
+    if env is None:
+        load_dotenv(dotenv_path=dotenv_path, override=False, verbose=False)
+        env = os.environ
     config = HarnessConfig()
     if path:
         if not os.path.exists(path):

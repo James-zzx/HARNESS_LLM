@@ -92,3 +92,18 @@
   - 日志脱敏已由 P1-05 + I8 修复验证
 - **人工裁决**: ① GitHub（保留 GitHub Actions，不另做 .gitlab-ci.yml）② PLAN.md 回填 + 完整 commit/PR 工作流 ③ 演示用脚本
 - **待人工**: GitHub 仓库推送与 PR 工作流、CI pass 确认、REFLECTION.md（须学生本人撰写）、线上部署 URL
+
+### [2026-08-01] — GitHub PR 工作流完成 + 部署前改进
+
+- **技能**: `finishing-a-development-branch`（PR 序列）、`test-driven-development`
+- **操作**:
+  - 重置 main 到开发起点，通过 GitHub 逐个合并 18 个任务 PR（PR #1-17 按依赖顺序 + PR #19 承载 final review 修复；PR #18 因历史冲突关闭）
+  - 修复 Dockerfile 两处 CI 阻塞（hatchling 构建后端 + wheel 文件名规范），最终 CI 三 job 全绿
+  - 文档恢复（PLAN 标记/冷启动/凭据自查因 reset 丢失，从保留 commit 恢复并推送）
+- **人工决策**: 部署暂停；先确认 WebUI 架构 + API-key 接入口；随后处理三个改进建议
+- **改进实现**:
+  - 建议1: `harness init` 生成的 harness.yaml 添加 API-key 配置注释（keyring / env / mock 三方式）
+  - 建议2: README Docker 章节说明容器内用 `credential.backend: env` + `HARNESS_*` 注入
+  - 建议3: 新增 `python-dotenv` 依赖，`load_config` 自动加载 `.env`（不覆盖已有环境变量）；新增 4 测试
+- **成果**: 155 测试通过（+4），ruff clean；提交待推送
+- **教训**: main reset 重写历史会丢失"不在任何任务分支上的收尾文档 commit"——应先把文档 commit 合并进某分支再 reset，或用 cherry-pick 恢复

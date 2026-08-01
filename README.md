@@ -256,6 +256,21 @@ docker run -v "$(pwd)/examples:/config" harness run --config /config/config.yaml
 
 镜像入口为 `python -m harness`（默认 `--help`），与 CLI 用法一致。
 
+**容器内 API key 配置**：精简容器（`python:3.11-slim`）没有 OS 钥匙串后端，因此容器内请使用 `credential.backend: env` 并通过环境变量注入 key，而非 `harness cred set`：
+
+```bash
+# config.yaml 中：
+#   credential:
+#     backend: env
+#   llm:
+#     credential_ref: harness/openai
+docker run -e HARNESS_HARNESS_OPENAI=sk-xxxx \
+  -v "$(pwd)/examples:/config" \
+  harness run --config /config/config.yaml /config/task.yaml
+```
+
+`credential_ref: harness/openai` 对应环境变量 `HARNESS_HARNESS_OPENAI`（规则 `HARNESS_<SERVICE>_<KEY>`）。`llm.mock: true` 时无需任何 key。
+
 ### PyPI
 
 ```bash

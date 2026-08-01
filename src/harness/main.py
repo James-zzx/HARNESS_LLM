@@ -136,10 +136,34 @@ def init_command() -> None:
     path = Path("harness.yaml")
     if path.exists():
         _error(f"{path} already exists")
-    path.write_text(
-        yaml.safe_dump(asdict(HarnessConfig()), sort_keys=False, default_flow_style=False),
-        encoding="utf-8",
+    header = (
+        "# AI Agent Harness - default configuration\n"
+        "#\n"
+        "# API key configuration (choose one):\n"
+        "#\n"
+        "# 1) OS keyring (recommended for local use):\n"
+        "#      python -m harness cred set harness openai\n"
+        "#    then set:\n"
+        "#      llm:\n"
+        "#        credential_ref: harness/openai\n"
+        "#      credential:\n"
+        "#        backend: keyring\n"
+        "#\n"
+        "# 2) Environment / .env file (recommended for containers):\n"
+        "#    set HARNESS_HARNESS_OPENAI=<your key> in .env or the environment,\n"
+        "#    then set:\n"
+        "#      llm:\n"
+        "#        credential_ref: harness/openai\n"
+        "#      credential:\n"
+        "#        backend: env\n"
+        "#\n"
+        "# In mock mode (llm.mock: true) no key is needed - the harness runs\n"
+        "# offline with a deterministic MockLLM.\n"
     )
+    body = yaml.safe_dump(
+        asdict(HarnessConfig()), sort_keys=False, default_flow_style=False
+    )
+    path.write_text(header + body, encoding="utf-8")
     click.echo(f"created {path}")
 
 
