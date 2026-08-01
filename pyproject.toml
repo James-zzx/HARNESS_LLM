@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "harness-llm"
+version = "0.1.0"
+description = "Safe, autonomous, and auditable harness for running coding AI agents"
+requires-python = ">=3.11"
+dependencies = [
+    "click",
+    "fastapi",
+    "uvicorn",
+    "pyyaml",
+    "structlog",
+    "keyring",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harness"]
