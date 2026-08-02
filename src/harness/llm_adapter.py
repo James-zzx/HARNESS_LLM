@@ -101,7 +101,7 @@ class LLMFactory:
         if self._mock:
             from harness.mock_llm import MockLLM
 
-            return MockLLM([])
+            return MockLLM()
         return OpenAIClient(
             api_key=self._api_key,
             model=self._model,

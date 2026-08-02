@@ -91,7 +91,7 @@ def _build_section(cls: Any, data: Any, prefix: str, base: Any = None) -> Any:
 
 @dataclass
 class LLMConfig:
-    mock: bool = False
+    mock: bool = True
     model: str = "gpt-4o"
     base_url: Optional[str] = None
     credential_ref: Optional[str] = None

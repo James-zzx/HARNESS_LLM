@@ -21,7 +21,15 @@ def test_cli_init_creates_config_with_api_key_hint(tmp_path, monkeypatch):
     assert "credential_ref" in text
     assert "backend" in text
     assert "harness cred set" in text or "HARNESS_" in text
-    assert "mock: false" in text
+    assert "mock: true" in text
+
+
+def test_cli_init_mock_true(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["init"])
+    assert result.exit_code == 0
+    text = (tmp_path / "harness.yaml").read_text(encoding="utf-8")
+    assert "mock: true" in text
 
 
 def test_cli_init_refuses_overwrite(tmp_path, monkeypatch):

@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from harness.config import ConfigError, load_config
@@ -6,13 +8,19 @@ from harness.config import ConfigError, load_config
 def test_load_default_config():
     cfg = load_config()
 
-    assert cfg.llm.mock is False
+    assert cfg.llm.mock is True
     assert cfg.llm.timeout == 120
     assert cfg.sandbox.enabled is True
     assert cfg.hitl.enabled is True
     assert cfg.logging.level == "INFO"
     assert cfg.open_design.enabled is False
     assert cfg.credential.service == "harness"
+
+
+def test_config_mock_default_true():
+    cfg = load_config()
+
+    assert cfg.llm.mock is True
 
 
 def test_load_dotenv_applies_env_vars(tmp_path, monkeypatch):
@@ -30,6 +38,9 @@ def test_load_dotenv_applies_env_vars(tmp_path, monkeypatch):
     assert cfg.llm.mock is True
     assert cfg.llm.model == "gpt-4o-mini"
     assert cfg.logging.level == "DEBUG"
+
+    for var in ("HARNESS_LLM_MOCK", "HARNESS_LLM_MODEL", "HARNESS_LOGGING_LEVEL"):
+        os.environ.pop(var, None)
 
 
 def test_load_dotenv_does_not_override_existing_env(tmp_path, monkeypatch):

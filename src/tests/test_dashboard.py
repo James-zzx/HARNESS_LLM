@@ -132,6 +132,17 @@ def test_api_mounts_static():
         assert "AI Agent Harness" in landing.text
 
 
+def test_dashboard_llm_mode_toggle():
+    html = _read("index.html")
+    assert 'id="llm-mode"' in html
+    assert 'value="mock"' in html
+    assert 'value="real"' in html
+    js = _read("app.js")
+    assert "harness.dashboard.llm_mode" in js
+    assert "localStorage.getItem" in js
+    assert "/api/credential/" in js
+
+
 def test_dashboard_api_key_button():
     html = _read("index.html")
     assert 'id="api-key-btn"' in html

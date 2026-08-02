@@ -73,6 +73,37 @@ body {
   gap: 16px;
 }
 
+/* ---------- LLM mode toggle ---------- */
+
+.llm-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+  cursor: pointer;
+}
+
+.llm-mode-label {
+  font-weight: 600;
+}
+
+.llm-mode-select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
 /* ---------- connection status ---------- */
 
 .conn-status {

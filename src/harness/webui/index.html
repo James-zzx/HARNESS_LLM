@@ -16,6 +16,13 @@
         <span class="conn-dot"></span>
         <span id="conn-label">连接中…</span>
       </span>
+      <label id="llm-mode" class="llm-mode" title="LLM 模式（真实 LLM 由服务端 config 决定）">
+        <span class="llm-mode-label">LLM</span>
+        <select id="llm-mode-select" class="llm-mode-select">
+          <option value="mock">离线 Mock</option>
+          <option value="real">真实 LLM</option>
+        </select>
+      </label>
       <button id="api-key-btn" class="btn" type="button" title="配置 API Key">API Key</button>
       <button id="new-task-btn" class="btn btn-primary" type="button">新任务</button>
     </div>
@@ -54,6 +61,8 @@
         <dd id="meta-iterations"></dd>
         <dt>超时时间</dt>
         <dd id="meta-timeout"></dd>
+        <dt>LLM 模式</dt>
+        <dd id="meta-llm-mode"></dd>
       </dl>
 
       <div id="meta-error" class="callout callout-error hidden"></div>
