@@ -189,6 +189,51 @@ Dashboard 是独立的内置界面，不依赖 Open Design。Open Design 仅是�
 
 完整可注释示例见 [examples/config.yaml](examples/config.yaml)。
 
+### 接入真实 LLM
+
+默认 `llm.mock: true`，harness 使用 MockLLM 离线运行（无需配置、无需网络，任务走默认演示循环完成）。要接入真实 LLM，按以下步骤配置：
+
+```yaml
+# harness.yaml（或 config.yaml）
+llm:
+  mock: false                              # 关闭 Mock，切换真实 LLM
+  model: gpt-4o-mini                       # 模型名（按服务商）
+  base_url: https://api.openai.com/v1      # LLM 端点（OpenAI 兼容，见下方示例）
+  credential_ref: harness/openai           # 引用凭据 "service/key"，绝不在配置写明文
+credential:
+  backend: keyring                         # keyring（OS 钥匙串）或 env
+```
+
+**1. 录入 API-Key**（二选一）：
+
+- 方式 A：dashboard 顶栏 `[API Key]` 弹窗（service=`harness`，key=`openai`），或 CLI：
+  ```bash
+  python -m harness cred set harness openai   # 隐藏输入，存入 OS 钥匙串
+  ```
+- 方式 B：环境变量后端（`credential.backend: env`）：
+  ```bash
+  export HARNESS_HARNESS_OPENAI=sk-xxxx   # 对应 credential_ref: harness/openai
+  ```
+
+**2. 验证**：`python -m harness config show` 应显示 `mock: false` 与 `credential_ref: harness/openai`；`python -m harness cred list harness` 显示 `openai`（不回显明文）。
+
+**常见 LLM 端点示例**：
+
+| 服务商 | base_url | model 示例 |
+|--------|----------|-----------|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| Ollama（本地） | `http://127.0.0.1:11434/v1` | `qwen2.5:7b` |
+| LM Studio（本地） | `http://127.0.0.1:1234/v1` | 任意已加载模型 |
+| vLLM / 兼容网关 | `http://<host>:<port>/v1` | 按部署 |
+
+> **OpenAI 兼容要求**：任何提供 `/v1/chat/completions` 的 OpenAI 兼容服务均可接入。key 只用于鉴权头，本地无鉴权的服务可任意填。
+
+**故障排查**：
+- 任务报 `WinError 10061` / `timed out` / `Connection refused`：`base_url` 指向的服务未启动、端口错误，或网络无法连接该端点。
+- 报 `401` / `Illegal header value`：API-Key 未配置或 `credential_ref` 与 key 名不匹配（用 `harness cred list <service>` 核对）。
+- 确认当前是 Mock 还是真实：`harness config show` 查看 `llm.mock`；dashboard 顶栏 LLM 模式开关显示当前偏好（实际模式以服务端 config 为准）。
+
 ### 环境变量覆盖
 
 环境变量使用 `HARNESS_<SECTION>_<FIELD>` 命名，可覆盖文件配置：
