@@ -516,8 +516,8 @@ Phase 5 (分发)                                       │
 - **Phase 3**: 2 个任务
 - **Phase 4**: 5 个任务 (含 Open Design 集成)
 - **Phase 5**: 3 个任务
-- **Phase 6**: 7 个任务 (Dashboard + 运行时对话 + API-Key 配置)
-- **合计**: 25 个任务
+- **Phase 6**: 8 个任务 (Dashboard + 运行时对话 + API-Key 配置 + LLM 双模式)
+- **合计**: 26 个任务
 
 ## Phase 6: WebUI Dashboard 与运行时对话
 
@@ -678,6 +678,31 @@ Phase 5 (分发)                                       │
   - [ ] pytest src/tests/test_api.py src/tests/test_dashboard.py 全部通过
   - [ ] 全量 pytest src/tests/ 无回归
   - [ ] 手动: dashboard 弹窗设置/查看/清除 key
+
+
+### P6-08: LLM 双模式（默认 Mock 离线 + 真实 LLM 切换）
+- **依赖**: P6-05, P6-07, P1-04
+- **并行**: —
+- **复杂度**: M
+- **涉及文件**: `src/harness/config.py`, `src/harness/mock_llm.py`, `src/harness/webui/index.html`, `src/harness/webui/app.js`, `src/harness/webui/style.css`, `src/harness/main.py`(init 注释), `examples/config.yaml`, `src/tests/test_config.py`, `src/tests/test_mock_llm.py`, `src/tests/test_dashboard.py`, `src/tests/test_cli.py`, `README.md`, `SPEC.md`
+- **内容**:
+  - [ ] config.py: `LLMConfig.mock` 默认值 `False -> True`（未配置真实 LLM 时离线运行）
+  - [ ] mock_llm.py: 未提供 preset 时返回默认演示循环（写 mock-output.txt → done），任务可完整跑完
+  - [ ] webui/index.html: 顶栏新增 LLM 模式开关（离线 Mock / 真实 LLM）
+  - [ ] webui/app.js: 模式选择持久化（localStorage）；选“真实 LLM”时提示配置 llm.mock:false + credential_ref + base_url（复用 API-Key 弹窗）；任务提交带上模式
+  - [ ] webui/style.css: 模式开关样式
+  - [ ] main.py init 注释、examples/config.yaml: mock 默认 true 说明
+  - [ ] README: 双模式说明
+- **TDD 先写测试**:
+  - [ ] `test_config_mock_default_true`: 默认配置 `llm.mock is True`
+  - [ ] `test_mock_llm_default_demo_cycle`: MockLLM() 无 preset 时返回写文件→done 序列，chat 两次内容不同且含 tool 动作
+  - [ ] `test_dashboard_llm_mode_toggle`: 页面含模式开关元素
+  - [ ] `test_cli_init_mock_true`: init 生成 harness.yaml 含 `mock: true`
+  - [ ] 现有测试更新: test_config.py:9 (`mock is False` -> `True`), test_cli.py:24 (`mock: false` -> `mock: true`)
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_config.py src/tests/test_mock_llm.py src/tests/test_dashboard.py src/tests/test_cli.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+  - [ ] 手动: dashboard 默认离线提交任务成功（MockLLM 演示循环）；切真实模式提示配置
 
 
 ## 完成清单

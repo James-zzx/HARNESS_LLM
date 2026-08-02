@@ -115,6 +115,8 @@
   - 每 2 秒轮询任务列表/详情/日志；HITL 暂停时显示批准/拒绝按钮
   - 设计风格采用 Open Design `minimal` 设计系统（色板、字体、排版）
   - **顶栏 API-Key 配置弹窗**: `[API Key]` 按钮弹出配置弹窗（service/key 字段，默认 `harness`/`openai`，即 `credential_ref: harness/openai`；key 值隐藏输入），支持设置 / 查看状态（仅返回 `configured` 布尔，不显示明文）/ 清除；保存到 CredentialStore（keyring/env 后端，与 `build_llm` 一致），保存后提示任务配置需设 `llm.credential_ref: service/key`
+  - **LLM 模式切换（离线 / 真实）**: 默认 `llm.mock: true`（未配置真实 LLM 时用 MockLLM 离线运行，任务不因连接失败报错）；dashboard 顶栏提供模式开关，选“真实 LLM”时提示配置 `llm.mock: false` + `credential_ref` + `base_url`（复用 API-Key 弹窗存 key），缺配置时返回明确提示而非运行失败
+  - **MockLLM 默认演示循环**: 未提供预设时 MockLLM 返回“写文件（mock-output.txt）→ done”序列，使任务可完整跑完（提交→工具执行→评估→完成）以测试 harness 全流程
 - **运行时对话**:
   - orchestrator 新增状态 `USER_INPUT`: 每轮 LLM 调用前检查 `MessageQueue` 是否有新用户消息；有则暂停等待（事件机制，同 HITL `await_external_decision`），收到消息后作为 `role="user"` 加入记忆并继续
   - 用户随时可发消息或上传文件（浏览器 FileReader 读内容填入消息框，可编辑后发送）；消息框始终可打字输入
