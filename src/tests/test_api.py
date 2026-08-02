@@ -13,6 +13,7 @@ from harness.api import (
     _map_status,
     create_app,
 )
+from harness.credential_store import CredentialStore, MemoryBackend
 from harness.hitl import GuardrailEngine, HITLGate
 from harness.llm_adapter import Response
 from harness.message_queue import MessageQueue
@@ -397,3 +398,70 @@ def test_api_default_runner_wires_message_queue_to_orchestrator(tmp_path, monkey
 
     assert result.status == "COMPLETED"
     assert any("use python instead" in content for content in seen["contexts"])
+
+
+# ---------- credential endpoints (P6-07) ----------
+
+
+def _cred_client():
+    store = CredentialStore(backend=MemoryBackend())
+    app = create_app(
+        credential_store=store,
+        runner=lambda task, gate, message_queue=None, on_orchestrator=None: None,
+    )
+    return TestClient(app), store
+
+
+def test_api_credential_put():
+    client, store = _cred_client()
+    with client:
+        response = client.put(
+            "/api/credential/harness/openai", json={"value": "sk-secret"}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"configured": True}
+        assert store.get_key("harness", "openai") == "sk-secret"
+        status = client.get("/api/credential/harness/openai")
+        assert status.status_code == 200
+        assert status.json()["configured"] is True
+
+
+def test_api_credential_get_no_leak():
+    client, store = _cred_client()
+    store.set_key("harness", "openai", "sk-topsecret-123")
+    with client:
+        response = client.get("/api/credential/harness/openai")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["configured"] is True
+        assert body["service"] == "harness"
+        assert body["key"] == "openai"
+        assert "sk-topsecret-123" not in response.text
+        assert "sk-topsecret-123" not in json.dumps(body)
+
+
+def test_api_credential_delete():
+    client, store = _cred_client()
+    store.set_key("harness", "openai", "sk-secret")
+    with client:
+        response = client.delete("/api/credential/harness/openai")
+        assert response.status_code == 200
+        assert response.json() == {"configured": False}
+        assert store.get_key("harness", "openai") is None
+        assert client.get("/api/credential/harness/openai").json()["configured"] is False
+
+
+def test_api_credential_empty_rejected():
+    client, _ = _cred_client()
+    with client:
+        for payload in ({"value": ""}, {"value": "   "}, {}):
+            response = client.put("/api/credential/harness/openai", json=payload)
+            assert response.status_code == 400, payload
+
+
+def test_api_credential_missing_parts_404():
+    client, _ = _cred_client()
+    with client:
+        assert client.get("/api/credential//openai").status_code == 404
+        assert client.put("/api/credential/harness/", json={"value": "x"}).status_code == 404
+        assert client.delete("/api/credential//").status_code == 404

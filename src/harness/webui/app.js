@@ -389,6 +389,106 @@ function showFormError(message) {
   box.classList.remove("hidden");
 }
 
+/* ---------- API Key modal ---------- */
+
+function openApiKeyModal() {
+  $("cred-error").classList.add("hidden");
+  $("cred-status").classList.add("hidden");
+  $("cred-value").value = "";
+  $("api-key-modal").classList.remove("hidden");
+  refreshCredStatus();
+}
+
+function closeApiKeyModal() {
+  $("api-key-modal").classList.add("hidden");
+}
+
+function credUrl(service, key) {
+  return (
+    "/api/credential/" +
+    encodeURIComponent(service) +
+    "/" +
+    encodeURIComponent(key)
+  );
+}
+
+function showCredError(message) {
+  const box = $("cred-error");
+  box.textContent = message;
+  box.classList.remove("hidden");
+}
+
+async function refreshCredStatus() {
+  const status = $("cred-status");
+  const service = $("cred-service").value.trim();
+  const key = $("cred-key").value.trim();
+  status.textContent = "查询中…";
+  status.className = "callout";
+  status.classList.remove("hidden");
+  try {
+    const res = await fetchJson(credUrl(service, key));
+    if (res.configured) {
+      status.textContent = "已配置（key 已保存，不会回显明文）";
+      status.classList.add("callout-ok");
+    } else {
+      status.textContent = "未配置";
+      status.classList.add("callout-warn");
+    }
+  } catch (err) {
+    status.textContent = "查询失败：" + err.message;
+    status.classList.add("callout-error");
+  }
+}
+
+async function saveCredential() {
+  $("cred-error").classList.add("hidden");
+  const service = $("cred-service").value.trim();
+  const key = $("cred-key").value.trim();
+  const value = $("cred-value").value;
+  if (!service || !key) {
+    showCredError("Service 与 Key 不能为空");
+    return;
+  }
+  if (!value) {
+    showCredError("请输入 key 值");
+    return;
+  }
+  const saveBtn = $("cred-save");
+  saveBtn.disabled = true;
+  try {
+    await fetchJson(credUrl(service, key), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    $("cred-value").value = "";
+    showToast("API Key 已保存");
+    await refreshCredStatus();
+  } catch (err) {
+    showCredError("保存失败：" + err.message);
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function clearCredential() {
+  $("cred-error").classList.add("hidden");
+  const service = $("cred-service").value.trim();
+  const key = $("cred-key").value.trim();
+  if (!service || !key) {
+    showCredError("Service 与 Key 不能为空");
+    return;
+  }
+  try {
+    await fetchJson(credUrl(service, key), { method: "DELETE" });
+    $("cred-value").value = "";
+    showToast("API Key 已清除");
+    await refreshCredStatus();
+  } catch (err) {
+    showCredError("清除失败：" + err.message);
+  }
+}
+
 /* ---------- conversation ---------- */
 
 async function sendMessage() {
@@ -482,8 +582,22 @@ $("form-cancel").addEventListener("click", closeModal);
 $("modal-backdrop").addEventListener("click", (event) => {
   if (event.target === $("modal-backdrop")) closeModal();
 });
+$("api-key-btn").addEventListener("click", openApiKeyModal);
+$("api-key-close").addEventListener("click", closeApiKeyModal);
+$("cred-cancel").addEventListener("click", closeApiKeyModal);
+$("api-key-modal").addEventListener("click", (event) => {
+  if (event.target === $("api-key-modal")) closeApiKeyModal();
+});
+$("cred-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveCredential();
+});
+$("cred-clear").addEventListener("click", clearCredential);
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeModal();
+  if (event.key === "Escape") {
+    closeModal();
+    closeApiKeyModal();
+  }
 });
 
 $("tab-form").addEventListener("click", () => setTab("form"));

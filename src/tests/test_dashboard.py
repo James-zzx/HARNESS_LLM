@@ -130,3 +130,17 @@ def test_api_mounts_static():
         landing = client.get("/")
         assert landing.status_code == 200
         assert "AI Agent Harness" in landing.text
+
+
+def test_dashboard_api_key_button():
+    html = _read("index.html")
+    assert 'id="api-key-btn"' in html
+    assert 'id="api-key-modal"' in html
+    assert 'id="cred-service"' in html
+    assert 'id="cred-key"' in html
+    assert 'id="cred-value"' in html
+    assert 'id="cred-status"' in html
+    js = _read("app.js")
+    assert '"/api/credential/"' in js
+    assert 'method: "PUT"' in js
+    assert 'method: "DELETE"' in js
