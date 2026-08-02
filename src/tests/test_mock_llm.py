@@ -1,5 +1,20 @@
+import json
+
 from harness.llm_adapter import Message, Response
 from harness.mock_llm import MockLLM
+
+
+def test_mock_llm_default_demo_cycle():
+    llm = MockLLM()
+    first = llm.chat([Message(role="user", content="hi")]).content
+    second = llm.chat([Message(role="user", content="hi")]).content
+    assert first != second
+    intent1 = json.loads(first)
+    intent2 = json.loads(second)
+    assert intent1["tool"] == "write_file"
+    assert intent1["params"]["path"] == "mock-output.txt"
+    assert intent1["params"]["content"] == "mock demo output"
+    assert intent2 == {"done": True}
 
 
 def test_mock_llm_returns_preset():

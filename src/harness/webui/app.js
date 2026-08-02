@@ -1,6 +1,8 @@
 "use strict";
 
 const STORAGE_KEY = "harness.dashboard.tasks.v1";
+const MODE_KEY = "harness.dashboard.llm_mode";
+const LLM_MODE_DEFAULT = "mock";
 const POLL_MS = 2000;
 
 const STATUS_LABEL = {
@@ -189,6 +191,12 @@ function renderDetail() {
   $("meta-iterations").textContent =
     String(task.iterations) + " / " + String(task.payload.max_iterations || "?");
   $("meta-timeout").textContent = String(task.payload.timeout || "?") + " s";
+  $("meta-llm-mode").textContent =
+    task.payload.llm_mode === "real"
+      ? "真实 LLM"
+      : task.payload.llm_mode === "mock"
+      ? "离线 Mock"
+      : "—";
 
   $("meta-error").classList.toggle("hidden", !task.error);
   $("meta-error").textContent = task.error ? "错误：" + task.error : "";
@@ -489,6 +497,66 @@ async function clearCredential() {
   }
 }
 
+/* ---------- LLM mode ---------- */
+
+const LLM_MODE_LABEL = { mock: "离线 Mock", real: "真实 LLM" };
+
+function getLlmMode() {
+  const saved = localStorage.getItem(MODE_KEY);
+  return saved === "real" ? "real" : LLM_MODE_DEFAULT;
+}
+
+function persistLlmMode(mode) {
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch (err) {
+    /* ignore storage quota errors */
+  }
+}
+
+function setLlmMode(mode) {
+  persistLlmMode(mode);
+  $("llm-mode-select").value = mode;
+  $("llm-mode").title =
+    "LLM 模式：" + LLM_MODE_LABEL[mode] + "（实际由服务端 config 决定）";
+}
+
+function initLlmMode() {
+  const mode = getLlmMode();
+  $("llm-mode-select").value = mode;
+  $("llm-mode").title =
+    "LLM 模式：" + LLM_MODE_LABEL[mode] + "（实际由服务端 config 决定）";
+}
+
+async function credentialConfigured(service, key) {
+  try {
+    const res = await fetchJson(credUrl(service, key));
+    return !!res.configured;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function onLlmModeChange() {
+  const mode = $("llm-mode-select").value;
+  setLlmMode(mode);
+  if (mode === "real") {
+    const configured = await credentialConfigured("harness", "openai");
+    if (!configured) {
+      showToast(
+        "真实 LLM 需要 API Key：请打开「API Key」保存，并在服务端 config 设置 llm.mock:false + credential_ref + base_url"
+      );
+      openApiKeyModal();
+    } else {
+      showToast(
+        "真实 LLM：任务实际由服务端 config 决定（llm.mock:false + credential_ref + base_url）"
+      );
+    }
+  } else {
+    showToast("离线 Mock：任务使用 MockLLM 演示循环（写 mock-output.txt → 完成）");
+  }
+}
+
 /* ---------- conversation ---------- */
 
 async function sendMessage() {
@@ -583,6 +651,7 @@ $("modal-backdrop").addEventListener("click", (event) => {
   if (event.target === $("modal-backdrop")) closeModal();
 });
 $("api-key-btn").addEventListener("click", openApiKeyModal);
+$("llm-mode-select").addEventListener("change", onLlmModeChange);
 $("api-key-close").addEventListener("click", closeApiKeyModal);
 $("cred-cancel").addEventListener("click", closeApiKeyModal);
 $("api-key-modal").addEventListener("click", (event) => {
@@ -620,6 +689,7 @@ $("task-form").addEventListener("submit", async (event) => {
     showFormError("必须填写任务 ID 与 Prompt");
     return;
   }
+  task.llm_mode = getLlmMode();
   const submitBtn = $("form-submit");
   submitBtn.disabled = true;
   try {
@@ -653,6 +723,7 @@ $("message-input").addEventListener("keydown", (event) => {
 });
 
 loadState();
+initLlmMode();
 renderTaskList();
 renderDetail();
 pollOnce();

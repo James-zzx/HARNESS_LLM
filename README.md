@@ -40,10 +40,13 @@ python -m harness --help
 python -m harness run --config examples/config.yaml examples/task.yaml
 ```
 
-MockLLM 默认空预设会确定性跑满 `max_iterations` 后以 `status=FAILED` 退出（退出码 1），这是预期行为——它离线走完了「加载任务 → LLM 调用 → 工具/评估循环 → 结果摘要」的完整主循环。配置了真实 LLM 凭据后，直接运行任务文件即可（默认 `llm.mock: false`，调用真实模型）：
+**双模式默认行为**：`llm.mock` 默认 `true`——未配置真实 LLM 时，harness 离线运行：`MockLLM()` 无预设时返回「写文件 `mock-output.txt` → done」的默认演示循环，任务可完整跑完（加载任务 → LLM 调用 → 工具执行 → 评估 → 完成，`status=COMPLETED`）。这使新环境开箱即用，不会因缺少真实 LLM 凭据而连接失败。
+
+切换到真实 LLM：在配置中设置 `llm.mock: false`、`credential_ref: harness/openai`（或自定义 `service/key`）与 `base_url`（可选，默认 OpenAI 兼容端点），并用 `harness cred set harness openai` 录入 key：
 
 ```bash
-python -m harness run task.yaml
+python -m harness run task.yaml   # 默认 mock: true，离线运行
+# 配置 llm.mock: false 后，调用真实模型
 ```
 
 ### 初始化项目
@@ -159,6 +162,7 @@ python -m harness dashboard [--host HOST] [--port PORT] [--config PATH]
 - **状态与日志**：轮询 `GET /api/tasks/{id}` 与 `GET /api/tasks/{id}/logs`，日志区自动刷新并自动滚到底部（用户上滚时暂停自动滚动）。
 - **HITL 审批**：任务处于 `PAUSED` 时显示 [批准] / [拒绝] 按钮，调用 `POST /api/hitl/{id}/approve|reject` 一键完成人工审批。
 - **运行时对话**：任务运行中可直接输入消息发送给 Agent（`POST /api/tasks/{id}/message`），或 [上传文件]——文件内容通过 FileReader 读入并填入消息框，可编辑后发送；消息框始终可打字。
+- **LLM 模式开关**：顶栏提供「离线 Mock / 真实 LLM」切换（选择持久化到 localStorage）。选「真实 LLM」时提示配置 `llm.mock: false` + `credential_ref` + `base_url`，并复用 API-Key 弹窗存 key（未配置时自动弹出提示）。**注意**：任务的实际 LLM 模式由服务端 config 决定——开关是引导/偏好记录（随任务提交带上 `llm_mode` 字段），不会在运行时动态切换服务端配置；要真正使用真实 LLM，需在服务端 `config.yaml` 设置 `llm.mock: false`。
 - **连接状态灯**：顶部实时显示与 API 的连接状态，API 不可达时显示红灯并提示。
 
 ### 零外部依赖
@@ -175,7 +179,7 @@ Dashboard 是独立的内置界面，不依赖 Open Design。Open Design 仅是�
 
 | Section | 关键字段 | 默认值 | 说明 |
 |---------|---------|--------|------|
-| `llm` | `mock` / `model` / `base_url` / `credential_ref` / `timeout` / `max_retries` | `mock: false`, `model: gpt-4o`, `timeout: 120`, `max_retries: 3` | LLM 端点与模型；`mock: true` 使用 MockLLM（离线，不访问凭据存储）；`credential_ref` 引用凭据 `service/key` |
+| `llm` | `mock` / `model` / `base_url` / `credential_ref` / `timeout` / `max_retries` | `mock: true`, `model: gpt-4o`, `timeout: 120`, `max_retries: 3` | LLM 端点与模型；`mock: true`（默认）使用 MockLLM（离线，不访问凭据存储），未配置预设时走默认演示循环；`credential_ref` 引用凭据 `service/key` |
 | `sandbox` | `enabled` / `timeout` / `max_memory_mb` / `allowed_dirs` / `blocked_dirs` / `blocked_commands` / `network` | `enabled: true`, `allowed_dirs: ["."]`, `network: deny`, `blocked_commands: ["rm -rf /", "shutdown", "format", "dd if="]` | 子进程沙箱：文件系统白名单、命令黑名单、网络 `allow/deny`、资源限制 |
 | `hitl` | `enabled` / `dangerous_commands` / `approval_timeout` | `enabled: true`, `approval_timeout: 300` | 危险命令规则引擎与 HITL 审批超时；`dangerous_commands` 默认并集 `["rm -rf", "shutdown", "format", "dd if=", "git push --force", "DROP TABLE"]` |
 | `logging` | `level` / `format` / `file_path` | `level: INFO`, `format: console` | 结构化日志；`format: json` 输出 JSON，`file_path` 开启 JSON 日志文件 |
@@ -262,7 +266,7 @@ export HARNESS_SANDBOX_NETWORK=allow
 
 ### LLM 适配与离线测试
 
-`LLMClient` 抽象接口定义 `chat(messages) → Response`；`OpenAIClient` 走真实 OpenAI 兼容 `/chat/completions` 端点；`MockLLM(preset_responses)` 循环返回预设响应，无网络依赖。`LLMFactory` 依据 `llm.mock` 选择实现；`build_llm(config)` 在非 mock 模式通过凭据存储（后端见 `credential.backend`）解析 `credential_ref` 注入 API key。测试基座 `BaseHarnessTest` 提供 `mock_llm` fixture（config / orchestrator 等由具体测试自行装配）。
+`LLMClient` 抽象接口定义 `chat(messages) → Response`；`OpenAIClient` 走真实 OpenAI 兼容 `/chat/completions` 端点；`MockLLM(preset_responses)` 循环返回预设响应，无网络依赖，**无预设（`MockLLM()`）时返回默认演示循环**「写文件 `mock-output.txt` → done」，使任务可离线跑完。`LLMFactory` 依据 `llm.mock` 选择实现（mock 默认 `true`）；`build_llm(config)` 在非 mock 模式通过凭据存储（后端见 `credential.backend`）解析 `credential_ref` 注入 API key。测试基座 `BaseHarnessTest` 提供 `mock_llm` fixture（config / orchestrator 等由具体测试自行装配）。
 
 ### 日志与追踪
 
@@ -272,7 +276,7 @@ export HARNESS_SANDBOX_NETWORK=allow
 
 - **存储**：凭据通过 `keyring` 库存入 OS 原生钥匙串（Windows Credential Manager / macOS Keychain / Linux Secret Service），不落盘明文。
 - **`env` 后端**：`credential.backend: env` 时，凭据从环境变量 `HARNESS_<SERVICE>_<KEY>` 读取（`credential_ref: llm/api_key` → `HARNESS_LLM_API_KEY`），用 `.env` 文件 + `set -a` 或容器 `-e` 注入；环境变量为明文且对同机进程可见（`/proc/*/environ`），仅在钥匙串不可用（如容器）时使用。
-- **Mock 模式**：`llm.mock: true` 完全不访问凭据存储（不触碰钥匙串/环境变量），离线安全运行。
+- **Mock 模式**：`llm.mock: true`（默认）完全不访问凭据存储（不触碰钥匙串/环境变量），离线安全运行。
 - **录入**：`harness cred set <service> <key>` 使用 `getpass` 隐藏输入，避免进入 Shell 历史与终端日志。
 - **引用**：配置中仅写 `credential_ref: <service>/<key>`，绝不硬编码 Key 值；`harness config show` 与日志都会将敏感字段脱敏。
 - **列出**：`harness cred list <service>` 只显示 Key 名称，不显示明文。
@@ -329,7 +333,7 @@ python -m pip install --group dev -e .   # 安装包 + dev 依赖（pytest / pyt
 ### 运行测试
 
 ```bash
-python -m pytest src/tests/                # 全部测试（当前 180 个，全部通过）
+python -m pytest src/tests/                # 全部测试（当前 194 个，全部通过）
 python -m pytest --cov=harness src/tests/  # 覆盖率
 python -m ruff check src/                  # Lint
 ```

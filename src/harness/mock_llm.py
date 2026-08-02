@@ -1,8 +1,22 @@
+import json
+
 from harness.llm_adapter import LLMClient, Message, Response
+
+DEFAULT_DEMO_PRESETS = [
+    json.dumps(
+        {
+            "tool": "write_file",
+            "params": {"path": "mock-output.txt", "content": "mock demo output"},
+        }
+    ),
+    json.dumps({"done": True}),
+]
 
 
 class MockLLM(LLMClient):
-    def __init__(self, preset_responses: list[str]):
+    def __init__(self, preset_responses: list[str] | None = None):
+        if preset_responses is None:
+            preset_responses = DEFAULT_DEMO_PRESETS
         self._presets = list(preset_responses)
         self._index = 0
 

@@ -4,7 +4,7 @@
 # Environment variables use HARNESS_<SECTION>_<FIELD> (e.g. HARNESS_LLM_MOCK=true).
 
 llm:
-  mock: true                 # true = MockLLM (offline), false = real provider
+  mock: true                 # true = MockLLM (offline, default), false = real provider
   model: gpt-4o
   base_url: null             # provider default when null
   credential_ref: harness/openai # credential reference "service/key", never a literal key

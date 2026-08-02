@@ -175,8 +175,9 @@ def init_command() -> None:
         "#      credential:\n"
         "#        backend: env\n"
         "#\n"
-        "# In mock mode (llm.mock: true) no key is needed - the harness runs\n"
-        "# offline with a deterministic MockLLM.\n"
+        "# Mock mode is the default: llm.mock: true means the harness runs\n"
+        "# offline with a deterministic MockLLM (no key needed, no network).\n"
+        "# To use a real LLM, set llm.mock: false and configure a key above.\n"
     )
     body = yaml.safe_dump(
         asdict(HarnessConfig()), sort_keys=False, default_flow_style=False
