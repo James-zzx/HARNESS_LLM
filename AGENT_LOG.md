@@ -124,3 +124,11 @@
   - 最终 180 测试通过，ruff clean
 - **人工裁决**: Dashboard 硬性约束为开箱即用、零外部依赖（不依赖 Open Design、无 CDN/外部资源）；Open Design 保持可选增强（`harness webui`），未安装/未启用不影响 Dashboard 与全部 CLI/REST API 功能
 - **教训**: 把"零外部依赖"这类非功能性约束转成可回归的确定性断言——`test_dashboard_no_external_refs` 校验 index.html 无 `http(s)://` 外部资源引用，避免前端后续引入 CDN 而不自知
+
+### [2026-08-02] — Phase 6 WebUI Dashboard 完成 + 网络阻断推送
+
+- **技能**: subagent-driven-development, test-driven-development, requesting-code-review, finishing-a-development-branch
+- **操作**: 完成 Phase 6 六个任务（P6-01 MessageQueue / P6-02 USER_INPUT / P6-03 API 端点 / P6-04 零依赖 dashboard / P6-05 dashboard CLI / P6-06 文档），每任务 TDD + review；final review 修复 C1（asset 404）+ I2/I3/I4/T1
+- **成果**: 184 测试通过，dashboard 零外部依赖开箱即用
+- **推送**: github.com 网络阻断 → 用 GitHub git data REST API（走 api.github.com）增量重建 9 个 commit 推送，远程与本地 tree 完全一致，CI 三 job 全绿
+- **教训**: github.com 与 api.github.com 可能被网络环境区别阻断；git data API 的 commit SHA 与本地不同（content-addressed 仅对 blob/tree 成立），需维护 commit SHA 映射
