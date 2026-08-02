@@ -516,8 +516,8 @@ Phase 5 (分发)                                       │
 - **Phase 3**: 2 个任务
 - **Phase 4**: 5 个任务 (含 Open Design 集成)
 - **Phase 5**: 3 个任务
-- **Phase 6**: 6 个任务 (Dashboard + 运行时对话)
-- **合计**: 24 个任务
+- **Phase 6**: 7 个任务 (Dashboard + 运行时对话 + API-Key 配置)
+- **合计**: 25 个任务
 
 ## Phase 6: WebUI Dashboard 与运行时对话
 
@@ -651,6 +651,33 @@ Phase 5 (分发)                                       │
 - **验证步骤**:
   - [x] 按 README 从零安装并 `harness dashboard` 运行一遍
   - [x] 全量 `pytest src/tests/` 通过
+
+
+### P6-07: Dashboard 顶栏 API-Key 配置弹窗
+- **依赖**: P6-05, P4-04
+- **并行**: —
+- **复杂度**: M
+- **涉及文件**: src/harness/api.py, src/harness/webui/index.html, src/harness/webui/app.js, src/harness/webui/style.css, src/tests/test_api.py, src/tests/test_dashboard.py
+- **内容**:
+  - [ ] api.py 新增凭据端点:
+    - GET /api/credential/{service}/{key} — 返回 {configured: bool}（**不返回明文**）
+    - PUT /api/credential/{service}/{key} — body {value}，非空校验，写入 CredentialStore
+    - DELETE /api/credential/{service}/{key} — 清除
+    - 后端从 config.credential.backend 选择（keyring/env），与 uild_llm 一致
+  - [ ] webui/index.html: 顶栏新增 [API Key] 按钮 + API-Key 配置弹窗（service/key 默认 harness/openai、key 值隐藏输入、状态区、保存/清除按钮）
+  - [ ] webui/app.js: 弹窗交互 — 打开时 GET 查询状态、保存 PUT、清除 DELETE、结果提示
+  - [ ] webui/style.css: 弹窗与按钮样式（复用现有 modal 风格）
+  - [ ] 安全: key 值永不在前端/API 响应回显，仅返回 configured
+- **TDD 先写测试**:
+  - [ ] 	est_api_credential_put: PUT 保存后 GET 返回 configured=true
+  - [ ] 	est_api_credential_get_no_leak: GET 响应不含明文 key 值
+  - [ ] 	est_api_credential_delete: DELETE 后 GET 返回 configured=false
+  - [ ] 	est_api_credential_empty_rejected: PUT 空 value → 400
+  - [ ] 	est_dashboard_api_key_button: 页面含 API Key 按钮 + 弹窗元素
+- **验证步骤**:
+  - [ ] pytest src/tests/test_api.py src/tests/test_dashboard.py 全部通过
+  - [ ] 全量 pytest src/tests/ 无回归
+  - [ ] 手动: dashboard 弹窗设置/查看/清除 key
 
 
 ## 完成清单

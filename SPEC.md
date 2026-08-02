@@ -111,9 +111,10 @@
 - **零外部依赖（硬性约束）**: 安装并配置 harness 后，harness dashboard 即可运行完整的图形化客户端，**不依赖任何额外插件（含 Open Design）、无需外部 CDN/字体/脚本**；Open Design 仅作为可选的构建期设计参考与运行期预览增强
 - **Dashboard 界面**:
   - 单页应用（HTML/CSS/JS），与 REST API 同源（127.0.0.1:8000），由 FastAPI `StaticFiles` 挂载
-  - 顶栏（标题 + "新任务"按钮 + 连接状态灯）、任务列表（状态徽章）、任务详情（元数据 + 日志区 + HITL 审批按钮 + 对话区）、新任务弹窗（表单或粘贴 YAML）
+  - 顶栏（标题 + "新任务"按钮 + "API Key"按钮 + 连接状态灯）、任务列表（状态徽章）、任务详情（元数据 + 日志区 + HITL 审批按钮 + 对话区）、新任务弹窗（表单或粘贴 YAML）、API-Key 配置弹窗
   - 每 2 秒轮询任务列表/详情/日志；HITL 暂停时显示批准/拒绝按钮
   - 设计风格采用 Open Design `minimal` 设计系统（色板、字体、排版）
+  - **顶栏 API-Key 配置弹窗**: `[API Key]` 按钮弹出配置弹窗（service/key 字段，默认 `harness`/`openai`，即 `credential_ref: harness/openai`；key 值隐藏输入），支持设置 / 查看状态（仅返回 `configured` 布尔，不显示明文）/ 清除；保存到 CredentialStore（keyring/env 后端，与 `build_llm` 一致），保存后提示任务配置需设 `llm.credential_ref: service/key`
 - **运行时对话**:
   - orchestrator 新增状态 `USER_INPUT`: 每轮 LLM 调用前检查 `MessageQueue` 是否有新用户消息；有则暂停等待（事件机制，同 HITL `await_external_decision`），收到消息后作为 `role="user"` 加入记忆并继续
   - 用户随时可发消息或上传文件（浏览器 FileReader 读内容填入消息框，可编辑后发送）；消息框始终可打字输入
@@ -122,6 +123,9 @@
   - `POST /api/tasks/{id}/message` — 发送用户消息（body: `{content}`），唤醒 USER_INPUT
   - `GET /api/tasks/{id}/messages` — 获取对话历史
   - `POST /api/tasks/{id}/interrupt` — 主动打断任务进入 USER_INPUT 等待
+  - `GET /api/credential/{service}/{key}` — 查询凭据是否已配置（返回 `{configured}`，不回显明文）
+  - `PUT /api/credential/{service}/{key}` — 保存凭据（body: `{value}`，隐藏输入，非空校验，写入 CredentialStore）
+  - `DELETE /api/credential/{service}/{key}` — 清除凭据
 - **新增 CLI**: `harness dashboard [--host 127.0.0.1] [--port 8000] [--config PATH]` — 启动 uvicorn 加载 API + 静态 dashboard，打印 URL，Ctrl+C 停止
 - **配置**: `HarnessConfig` 新增 `webui` 段（`host` / `port`，默认 127.0.0.1 / 8000）；CLI 参数可覆盖
 - **关键文件**: `src/harness/webui/`（index.html, app.js, style.css）, `src/harness/dashboard.py`, `src/harness/message_queue.py`, `src/tests/test_dashboard.py`, `src/tests/test_message_queue.py`
