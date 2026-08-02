@@ -9,6 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from harness.credential_store import CredentialStore
 from harness.hitl import HITLGate
 from harness.message_queue import MessageQueue
 from harness.orchestrator import Orchestrator, RunResult
@@ -192,13 +193,25 @@ def _default_runner() -> TaskRunner:
     return run
 
 
+def _default_credential_store() -> CredentialStore:
+    from harness.config import load_config
+    from harness.credential_store import EnvBackend
+
+    backend = getattr(getattr(load_config(), "credential", None), "backend", "keyring")
+    if backend == "env":
+        return CredentialStore(backend=EnvBackend())
+    return CredentialStore()
+
+
 def create_app(
     *,
     task_manager: Optional[TaskManager] = None,
     runner: Optional[TaskRunner] = None,
+    credential_store: Optional[CredentialStore] = None,
 ) -> FastAPI:
     manager = task_manager or TaskManager()
     run = runner or _default_runner()
+    store = credential_store if credential_store is not None else _default_credential_store()
 
     default_runtime = None
     if runner is None:
@@ -306,6 +319,34 @@ def create_app(
     def interrupt_task(task_id: str):
         requested = manager.request_interrupt(task_id)
         return {"task_id": task_id, "interrupt_requested": requested}
+
+    def _require_credential_parts(service: str, key: str) -> None:
+        if not service or not key:
+            raise TaskNotFoundError("credential service/key not found")
+
+    @app.get("/api/credential/{service}/{key}")
+    def get_credential(service: str, key: str):
+        _require_credential_parts(service, key)
+        return {
+            "service": service,
+            "key": key,
+            "configured": store.get_key(service, key) is not None,
+        }
+
+    @app.put("/api/credential/{service}/{key}")
+    def put_credential(service: str, key: str, body: dict):
+        _require_credential_parts(service, key)
+        value = body.get("value")
+        if not isinstance(value, str) or not value.strip():
+            raise TaskError("credential value must be a non-empty string")
+        store.set_key(service, key, value)
+        return {"configured": True}
+
+    @app.delete("/api/credential/{service}/{key}")
+    def delete_credential(service: str, key: str):
+        _require_credential_parts(service, key)
+        store.delete_key(service, key)
+        return {"configured": False}
 
     @app.exception_handler(TaskNotFoundError)
     def handle_not_found(request: Request, exc: TaskNotFoundError):

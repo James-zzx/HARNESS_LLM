@@ -396,6 +396,12 @@ body {
   color: #92400e;
 }
 
+.callout-ok {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #16a34a;
+}
+
 /* ---------- HITL ---------- */
 
 .hitl-actions {
@@ -639,6 +645,10 @@ body {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 16px;
+}
+
+.modal-actions-spacer {
+  flex: 1;
 }
 
 /* ---------- toast ---------- */

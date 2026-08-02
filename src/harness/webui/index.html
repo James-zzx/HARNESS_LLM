@@ -16,6 +16,7 @@
         <span class="conn-dot"></span>
         <span id="conn-label">连接中…</span>
       </span>
+      <button id="api-key-btn" class="btn" type="button" title="配置 API Key">API Key</button>
       <button id="new-task-btn" class="btn btn-primary" type="button">新任务</button>
     </div>
   </div>
@@ -127,6 +128,39 @@
       <div class="modal-actions">
         <button type="button" id="form-cancel" class="btn">取消</button>
         <button type="submit" id="form-submit" class="btn btn-primary">提交任务</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="api-key-modal" class="modal-backdrop hidden">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="api-key-title">
+    <div class="modal-head">
+      <h2 id="api-key-title">API Key 配置</h2>
+      <button id="api-key-close" class="btn btn-ghost" type="button" aria-label="关闭">✕</button>
+    </div>
+
+    <form id="cred-form">
+      <div class="field-row">
+        <label class="field">Service
+          <input type="text" id="cred-service" value="harness" autocomplete="off">
+        </label>
+        <label class="field">Key
+          <input type="text" id="cred-key" value="openai" autocomplete="off">
+        </label>
+      </div>
+      <label class="field">Key 值
+        <input type="password" id="cred-value" autocomplete="new-password" placeholder="输入新的 key 值（不会回显）">
+      </label>
+
+      <div id="cred-status" class="callout hidden"></div>
+      <div id="cred-error" class="callout callout-error hidden"></div>
+
+      <div class="modal-actions">
+        <button type="button" id="cred-clear" class="btn btn-danger-ghost">清除</button>
+        <span class="modal-actions-spacer"></span>
+        <button type="button" id="cred-cancel" class="btn">取消</button>
+        <button type="submit" id="cred-save" class="btn btn-primary">保存</button>
       </div>
     </form>
   </div>
