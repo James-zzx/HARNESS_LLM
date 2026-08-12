@@ -630,6 +630,7 @@ def test_api_task_default_mock(tmp_path, monkeypatch):
 
 
 def test_api_task_llm_mode_real_without_key_fails_clearly(tmp_path, monkeypatch):
+    monkeypatch.setattr("keyring.get_password", lambda service, key: None)
     monkeypatch.chdir(tmp_path)
 
     manager = TaskManager()

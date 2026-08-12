@@ -69,6 +69,20 @@ def test_build_llm_resolves_credential_ref():
     assert client._model == "gpt-x"
 
 
+def test_build_llm_real_mode_falls_back_to_default_credential_ref():
+    store = CredentialStore(backend=MemoryBackend())
+    store.set_key("harness", "openai", "sk-fallback")
+    config = HarnessConfig(
+        llm=LLMConfig(mock=False, model="gpt-x", credential_ref=None)
+    )
+
+    client = build_llm(config, credential_store=store)
+
+    assert isinstance(client, OpenAIClient)
+    assert client._api_key == "sk-fallback"
+    assert client._model == "gpt-x"
+
+
 def test_build_llm_uses_env_backend_from_config(monkeypatch):
     monkeypatch.setenv("HARNESS_LLM_API_KEY", "sk-from-env")
     config = HarnessConfig(
