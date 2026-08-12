@@ -109,6 +109,7 @@ class Orchestrator:
         tool_executor: Optional[ToolExecutor] = None,
         feedback_provider: Optional[Callable[[], Optional[str]]] = None,
         message_queue: Optional[MessageQueue] = None,
+        conversation_sink: Optional[Callable[[dict], None]] = None,
     ):
         self._llm = llm
         self._work_dir = Path(work_dir).resolve()
@@ -119,6 +120,7 @@ class Orchestrator:
         self._tool_executor = tool_executor or ToolExecutor(work_dir=str(self._work_dir))
         self._feedback_provider = feedback_provider
         self._message_queue = message_queue
+        self.conversation_sink = conversation_sink
         self._interrupt_requested = False
         self._memory = ConversationMemory()
         self._state = INIT
@@ -208,6 +210,8 @@ class Orchestrator:
                     role="tool",
                     content=json.dumps({"error": "intent must be a JSON object with 'tool' or 'done'"}),
                 )
+                if self.conversation_sink is not None:
+                    self.conversation_sink({"role": "assistant", "content": response.content})
                 continue
 
             if intent.get("done"):

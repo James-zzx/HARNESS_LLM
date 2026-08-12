@@ -32,6 +32,11 @@ def _redact(value: Any) -> Any:
     return value
 
 
+def redact(value: Any) -> Any:
+    """Recursively replace values under sensitive keys with the redaction marker."""
+    return _redact(value)
+
+
 def _redact_sensitive(logger: Any, method_name: str, event_dict: dict) -> dict:
     return _redact(event_dict)
 
