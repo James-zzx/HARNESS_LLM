@@ -133,8 +133,10 @@ def build_llm(config, credential_store=None) -> LLMClient:
         credential_ref = config.llm.credential_ref
         if credential_ref and "/" in credential_ref:
             service, _, key = credential_ref.partition("/")
-            store = _store_for_config(config, credential_store)
-            api_key = store.get_key(service, key) or ""
+        else:
+            service, key = "harness", "openai"
+        store = _store_for_config(config, credential_store)
+        api_key = store.get_key(service, key) or ""
         if not api_key:
             raise TaskError(
                 "real LLM mode requires a stored credential: set llm.credential_ref "
