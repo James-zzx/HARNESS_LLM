@@ -268,3 +268,45 @@ def test_orchestrator_interrupt(work_dir):
         m.role == "user" and m.content == "resume"
         for m in orch.memory.get_history()
     )
+
+
+def test_orchestrator_records_natural_reply(work_dir):
+    sink = []
+    orch = Orchestrator(
+        llm=MockLLM(["I will fix that now.", DONE]),
+        work_dir=work_dir,
+        conversation_sink=sink.append,
+    )
+
+    result = orch.run(Task(id="t-nl", prompt="fix the bug"))
+
+    assert result.status == "COMPLETED"
+    assert {"role": "assistant", "content": "I will fix that now."} in sink
+
+
+def test_orchestrator_skips_tool_intent(work_dir):
+    sink = []
+    orch = Orchestrator(
+        llm=MockLLM([_write("skip.txt", "x"), DONE]),
+        work_dir=work_dir,
+        conversation_sink=sink.append,
+    )
+
+    result = orch.run(Task(id="t-ti", prompt="write skip.txt"))
+
+    assert result.status == "COMPLETED"
+    assert sink == []
+
+
+def test_orchestrator_skips_whitespace_reply(work_dir):
+    sink = []
+    orch = Orchestrator(
+        llm=MockLLM(["   ", DONE]),
+        work_dir=work_dir,
+        conversation_sink=sink.append,
+    )
+
+    result = orch.run(Task(id="t-ws", prompt="fix the bug"))
+
+    assert result.status == "COMPLETED"
+    assert sink == []

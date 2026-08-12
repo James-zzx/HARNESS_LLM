@@ -1,4 +1,6 @@
 import dataclasses
+import json
+import re
 import tempfile
 import threading
 from dataclasses import dataclass, field
@@ -11,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from harness.credential_store import CredentialStore
 from harness.hitl import HITLGate
+from harness.logger import redact as redact_data
 from harness.message_queue import MessageQueue
 from harness.orchestrator import Orchestrator, RunResult
 from harness.task import Task, TaskError, TaskParser, TaskStatus
@@ -22,6 +25,37 @@ _STATUS_MAP = {
     "FAILED": TaskStatus.FAILED,
     "PAUSED": TaskStatus.PAUSED,
 }
+
+_SENSITIVE_PAIR = re.compile(
+    r"(?i)([a-z0-9_]*"
+    r"(?:(?<![a-z0-9])key(?![a-z0-9])|secret|token|password|credential_ref)"
+    r"[a-z0-9_]*\s*[:=]\s*)"
+    r"(\"[^\"]*\"|'[^']*'|[^\s\"',}]+)"
+)
+
+
+def _redact_text(content: str) -> str:
+    return _SENSITIVE_PAIR.sub(lambda match: match.group(1) + "***", content)
+
+
+def redact_message(message: dict) -> dict:
+    """Copy a message with sensitive content redacted before storage (§3.1)."""
+    role = message.get("role")
+    content = message.get("content")
+    if isinstance(content, str):
+        stripped = content.strip()
+        if stripped[:1] in ("{", "["):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, (dict, list)):
+                content = json.dumps(redact_data(parsed), ensure_ascii=False)
+            else:
+                content = _redact_text(content)
+        else:
+            content = _redact_text(content)
+    return {"role": role, "content": content}
 
 
 class TaskNotFoundError(TaskError):
@@ -129,7 +163,7 @@ class TaskManager:
 
     def append_message(self, task_id: str, message: dict) -> None:
         with self._lock:
-            self._record(task_id).messages.append(message)
+            self._record(task_id).messages.append(redact_message(message))
 
     def get_messages(self, task_id: str) -> list[dict]:
         with self._lock:
@@ -231,6 +265,9 @@ def create_app(
 
         def on_orchestrator(orchestrator: Orchestrator) -> None:
             manager.attach_orchestrator(task_id, orchestrator)
+            orchestrator.conversation_sink = lambda message: manager.append_message(
+                task_id, message
+            )
             if manager.get_interrupt_requested(task_id):
                 orchestrator.interrupt()
 

@@ -465,3 +465,93 @@ def test_api_credential_missing_parts_404():
         assert client.get("/api/credential//openai").status_code == 404
         assert client.put("/api/credential/harness/", json={"value": "x"}).status_code == 404
         assert client.delete("/api/credential//").status_code == 404
+
+
+def test_api_messages_include_assistant(tmp_path, monkeypatch):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM(["ok I will do it", json.dumps({"done": True})])
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-asst", "prompt": "do the work"})
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if manager.snapshot("api-asst")["status"] == "completed":
+                break
+            time.sleep(0.05)
+        body = client.get("/api/tasks/api-asst/messages").json()
+
+    assert manager.snapshot("api-asst")["status"] == "completed"
+    assert {"role": "assistant", "content": "ok I will do it"} in body["messages"]
+
+
+def test_api_messages_no_tool_content(tmp_path, monkeypatch):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM(
+            [
+                json.dumps(
+                    {
+                        "tool": "write_file",
+                        "params": {"path": "notes.txt", "content": "AWS_ACCESS_KEY sk-12345"},
+                    }
+                ),
+                "I wrote the file.",
+                json.dumps({"done": True}),
+            ]
+        )
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-noc", "prompt": "write notes.txt"})
+        client.post("/api/tasks/api-noc/message", json={"content": "use the plan"})
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if manager.snapshot("api-noc")["status"] == "completed":
+                break
+            time.sleep(0.05)
+        body = client.get("/api/tasks/api-noc/messages").json()
+
+    for message in body["messages"]:
+        assert message["role"] in {"user", "assistant"}
+    assert {"role": "assistant", "content": "I wrote the file."} in body["messages"]
+    text = json.dumps(body, ensure_ascii=False)
+    assert "sk-12345" not in text
+    assert "notes.txt" not in text
+    assert "write_file" not in text
+
+
+def test_api_messages_redacts_secrets():
+    with _client() as client:
+        client.post("/api/tasks", json={"id": "api-red", "prompt": "hi"})
+        client.post(
+            "/api/tasks/api-red/message",
+            json={"content": '{"api_key": "sk-123", "token": "tok-456", "user": "alice"}'},
+        )
+        client.post(
+            "/api/tasks/api-red/message",
+            json={"content": "db password=hunter2 ok"},
+        )
+        client.post(
+            "/api/tasks/api-red/message",
+            json={"content": "api_key: sk-abc plain text"},
+        )
+        response = client.get("/api/tasks/api-red/messages")
+
+    body = response.json()
+    assert body["messages"] == [
+        {"role": "user", "content": '{"api_key": "***", "token": "***", "user": "alice"}'},
+        {"role": "user", "content": "db password=*** ok"},
+        {"role": "user", "content": "api_key: *** plain text"},
+    ]
+    assert "sk-123" not in response.text
+    assert "tok-456" not in response.text
+    assert "hunter2" not in response.text
+    assert "sk-abc" not in response.text
