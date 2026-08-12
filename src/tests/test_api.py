@@ -512,6 +512,11 @@ def test_api_messages_no_tool_content(tmp_path, monkeypatch):
     with TestClient(app) as client:
         client.post("/api/tasks", json={"id": "api-noc", "prompt": "write notes.txt"})
         client.post("/api/tasks/api-noc/message", json={"content": "use the plan"})
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if manager.snapshot("api-noc")["status"] == "completed":
+                break
+            time.sleep(0.05)
         body = client.get("/api/tasks/api-noc/messages").json()
 
     for message in body["messages"]:
@@ -534,13 +539,19 @@ def test_api_messages_redacts_secrets():
             "/api/tasks/api-red/message",
             json={"content": "db password=hunter2 ok"},
         )
+        client.post(
+            "/api/tasks/api-red/message",
+            json={"content": "api_key: sk-abc plain text"},
+        )
         response = client.get("/api/tasks/api-red/messages")
 
     body = response.json()
     assert body["messages"] == [
         {"role": "user", "content": '{"api_key": "***", "token": "***", "user": "alice"}'},
         {"role": "user", "content": "db password=*** ok"},
+        {"role": "user", "content": "api_key: *** plain text"},
     ]
     assert "sk-123" not in response.text
     assert "tok-456" not in response.text
     assert "hunter2" not in response.text
+    assert "sk-abc" not in response.text

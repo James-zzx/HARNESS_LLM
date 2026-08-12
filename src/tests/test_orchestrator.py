@@ -296,3 +296,17 @@ def test_orchestrator_skips_tool_intent(work_dir):
 
     assert result.status == "COMPLETED"
     assert sink == []
+
+
+def test_orchestrator_skips_whitespace_reply(work_dir):
+    sink = []
+    orch = Orchestrator(
+        llm=MockLLM(["   ", DONE]),
+        work_dir=work_dir,
+        conversation_sink=sink.append,
+    )
+
+    result = orch.run(Task(id="t-ws", prompt="fix the bug"))
+
+    assert result.status == "COMPLETED"
+    assert sink == []

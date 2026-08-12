@@ -195,7 +195,7 @@ class Orchestrator:
             self._iterations += 1
             context = self._memory.get_context_window(self._max_context_tokens)
             response = self._llm.chat(context)
-            if response is None or not response.content:
+            if response is None or not (response.content or "").strip():
                 self._memory.add_message(role="assistant", content=response.content if response else "")
                 self._memory.add_message(
                     role="tool",

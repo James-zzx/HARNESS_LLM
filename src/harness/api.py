@@ -27,7 +27,9 @@ _STATUS_MAP = {
 }
 
 _SENSITIVE_PAIR = re.compile(
-    r"(?i)(\b(?:key|secret|token|password)\b\s*[:=]\s*)"
+    r"(?i)([a-z0-9_]*"
+    r"(?:(?<![a-z0-9])key(?![a-z0-9])|secret|token|password|credential_ref)"
+    r"[a-z0-9_]*\s*[:=]\s*)"
     r"(\"[^\"]*\"|'[^']*'|[^\s\"',}]+)"
 )
 
