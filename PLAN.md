@@ -516,8 +516,8 @@ Phase 5 (分发)                                       │
 - **Phase 3**: 2 个任务
 - **Phase 4**: 5 个任务 (含 Open Design 集成)
 - **Phase 5**: 3 个任务
-- **Phase 6**: 8 个任务 (Dashboard + 运行时对话 + API-Key 配置 + LLM 双模式)
-- **合计**: 26 个任务
+- **Phase 6**: 9 个任务 (Dashboard + 运行时对话 + API-Key 配置 + LLM 双模式 + 对话答复显示)
+- **合计**: 27 个任务
 
 ## Phase 6: WebUI Dashboard 与运行时对话
 
@@ -703,6 +703,28 @@ Phase 5 (分发)                                       │
   - [ ] `pytest src/tests/test_config.py src/tests/test_mock_llm.py src/tests/test_dashboard.py src/tests/test_cli.py` 全部通过
   - [ ] 全量 `pytest src/tests/` 无回归
   - [ ] 手动: dashboard 默认离线提交任务成功（MockLLM 演示循环）；切真实模式提示配置
+
+
+### P6-09: 对话区显示 agent 答复（隐私限制）
+- **依赖**: P6-03, P6-02
+- **并行**: —
+- **复杂度**: M
+- **涉及文件**: `src/harness/orchestrator.py`, `src/harness/api.py`, `src/tests/test_orchestrator.py`, `src/tests/test_api.py`, `src/tests/test_dashboard.py`, `src/harness/webui/app.js`(确认), `SPEC.md`, `README.md`
+- **内容**:
+  - [ ] orchestrator: 新增可选 `conversation_sink: Optional[Callable[[dict], None]]` 参数；运行时把**自然语言答复**（`_parse_intent` 返回 None 的非空响应）记录为 `{"role":"assistant","content":...}` 推给 sink；**工具调用 JSON 意图不记录**
+  - [ ] api: `_run_task` 的 `on_orchestrator` 给 orchestrator 注入 `conversation_sink=manager.append_message`；`get_messages` 现返回 user + assistant
+  - [ ] **隐私（§3.1）**: messages 绝不包含工具参数/结果/命令/文件内容；敏感字段（key/secret/token/password）在记录前脱敏兜底；GET 响应不回显凭据明文
+  - [ ] 前端: `renderConversation` 已支持双角色，确认只渲染 user/assistant（无 tool 消息）
+- **TDD 先写测试**:
+  - [ ] `test_orchestrator_records_natural_reply`: MockLLM 返回自然语言 → conversation_sink 收到 assistant 消息
+  - [ ] `test_orchestrator_skips_tool_intent`: MockLLM 返回工具 JSON → sink 不收到（工具不记录）
+  - [ ] `test_api_messages_include_assistant`: GET messages 含 assistant
+  - [ ] `test_api_messages_no_tool_content`: messages 不含工具参数/命令（隐私）
+  - [ ] `test_api_messages_redacts_secrets`: messages 中 key/token 字段被脱敏（§3.1）
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_orchestrator.py src/tests/test_api.py src/tests/test_dashboard.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+  - [ ] 手动: 任务运行中提问，对话区显示 user + agent 答复
 
 
 ## 完成清单

@@ -120,10 +120,11 @@
 - **运行时对话**:
   - orchestrator 新增状态 `USER_INPUT`: 每轮 LLM 调用前检查 `MessageQueue` 是否有新用户消息；有则暂停等待（事件机制，同 HITL `await_external_decision`），收到消息后作为 `role="user"` 加入记忆并继续
   - 用户随时可发消息或上传文件（浏览器 FileReader 读内容填入消息框，可编辑后发送）；消息框始终可打字输入
+  - agent 自然语言答复（非工具 JSON 意图）在运行时记录为 `role=assistant`，对话区显示 user + agent 对话；工具调用 JSON 及其参数/结果不记录，隐私最小暴露
   - 与 HITL 关系: 独立 USER_INPUT 状态（自由消息）与 PAUSED（危险审批）并存，HITL 优先
 - **新增 REST API 端点**:
   - `POST /api/tasks/{id}/message` — 发送用户消息（body: `{content}`），唤醒 USER_INPUT
-  - `GET /api/tasks/{id}/messages` — 获取对话历史
+- `GET /api/tasks/{id}/messages` — 获取对话历史（**user 问题 + agent 自然语言答复**；工具调用/参数/结果不回显，遵守凭据安全原则——敏感字段脱敏、不暴露命令与文件内容）
   - `POST /api/tasks/{id}/interrupt` — 主动打断任务进入 USER_INPUT 等待
   - `GET /api/credential/{service}/{key}` — 查询凭据是否已配置（返回 `{configured}`，不回显明文）
   - `PUT /api/credential/{service}/{key}` — 保存凭据（body: `{value}`，隐藏输入，非空校验，写入 CredentialStore）
