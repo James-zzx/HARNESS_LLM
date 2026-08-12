@@ -516,8 +516,8 @@ Phase 5 (分发)                                       │
 - **Phase 3**: 2 个任务
 - **Phase 4**: 5 个任务 (含 Open Design 集成)
 - **Phase 5**: 3 个任务
-- **Phase 6**: 9 个任务 (Dashboard + 运行时对话 + API-Key 配置 + LLM 双模式 + 对话答复显示)
-- **合计**: 27 个任务
+- **Phase 6**: 10 个任务 (Dashboard + 运行时对话 + API-Key 配置 + LLM 双模式 + 对话答复显示 + LLM 开关生效)
+- **合计**: 28 个任务
 
 ## Phase 6: WebUI Dashboard 与运行时对话
 
@@ -725,6 +725,27 @@ Phase 5 (分发)                                       │
   - [ ] `pytest src/tests/test_orchestrator.py src/tests/test_api.py src/tests/test_dashboard.py` 全部通过
   - [ ] 全量 `pytest src/tests/` 无回归
   - [ ] 手动: 任务运行中提问，对话区显示 user + agent 答复
+
+
+### P6-10: UI LLM 模式开关真正切换 llm.mock（运行时动态覆盖）
+- **依赖**: P6-08, P6-07
+- **并行**: —
+- **复杂度**: M
+- **涉及文件**: `src/harness/task.py`, `src/harness/api.py`, `src/harness/webui/app.js`(确认), `src/tests/test_task.py`, `src/tests/test_api.py`, `SPEC.md`, `README.md`
+- **内容**:
+  - [ ] task.py: `Task` dataclass 增加 `llm_mode: Optional[str] = None`；`from_dict` 解析 `llm_mode`（"mock"/"real"，可选）
+  - [ ] api.py: `_run_task` 读取任务 `llm_mode`，构建覆盖后的 config（`dataclasses.replace(config, llm=replace(config.llm, mock=...))`），传给 `build_llm`；缺 key 时真实模式返回明确提示（复用现有错误处理）
+  - [ ] 前端: `task.llm_mode` 已随提交发送（P6-08），确认后端解析生效；开关 title/提示更新为"任务运行时生效"
+  - [ ] 隐私: 不改动（§3.1）
+- **TDD 先写测试**:
+  - [ ] `test_task_llm_mode_field`: from_dict 解析 llm_mode（默认 None / "mock" / "real"）
+  - [ ] `test_api_task_llm_mode_real_uses_real_llm`: 提交 llm_mode=real 任务 → _run_task 用 mock=false 构建 build_llm（注入 stub 验证）
+  - [ ] `test_api_task_llm_mode_mock_uses_mock`: 提交 llm_mode=mock → build_llm 用 mock=true
+  - [ ] `test_api_task_default_mock`: 无 llm_mode → 默认 mock（服务端 config）
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_task.py src/tests/test_api.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+  - [ ] 手动: dashboard 切"真实 LLM"提交任务 → 实际调用真实端点（本地 mock 验证）；切"离线" → 走 mock
 
 
 ## 完成清单
