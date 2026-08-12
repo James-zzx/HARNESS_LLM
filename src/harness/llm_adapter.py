@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import httpx
 
 from harness.credential_store import CredentialStore, EnvBackend
+from harness.task import TaskError
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -134,6 +135,11 @@ def build_llm(config, credential_store=None) -> LLMClient:
             service, _, key = credential_ref.partition("/")
             store = _store_for_config(config, credential_store)
             api_key = store.get_key(service, key) or ""
+        if not api_key:
+            raise TaskError(
+                "real LLM mode requires a stored credential: set llm.credential_ref "
+                "(e.g. harness/openai) and store the API key before running"
+            )
     return LLMFactory(
         mock=config.llm.mock,
         model=config.llm.model,

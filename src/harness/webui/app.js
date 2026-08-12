@@ -518,14 +518,14 @@ function setLlmMode(mode) {
   persistLlmMode(mode);
   $("llm-mode-select").value = mode;
   $("llm-mode").title =
-    "LLM 模式：" + LLM_MODE_LABEL[mode] + "（实际由服务端 config 决定）";
+    "LLM 模式：" + LLM_MODE_LABEL[mode] + "（任务运行时生效）";
 }
 
 function initLlmMode() {
   const mode = getLlmMode();
   $("llm-mode-select").value = mode;
   $("llm-mode").title =
-    "LLM 模式：" + LLM_MODE_LABEL[mode] + "（实际由服务端 config 决定）";
+    "LLM 模式：" + LLM_MODE_LABEL[mode] + "（任务运行时生效）";
 }
 
 async function credentialConfigured(service, key) {
@@ -544,16 +544,14 @@ async function onLlmModeChange() {
     const configured = await credentialConfigured("harness", "openai");
     if (!configured) {
       showToast(
-        "真实 LLM 需要 API Key：请打开「API Key」保存，并在服务端 config 设置 llm.mock:false + credential_ref + base_url"
+        "真实 LLM 需要 API Key：请打开「API Key」保存，并在服务端 config 设置 llm.credential_ref + base_url"
       );
       openApiKeyModal();
     } else {
-      showToast(
-        "真实 LLM：任务实际由服务端 config 决定（llm.mock:false + credential_ref + base_url）"
-      );
+      showToast("真实 LLM：该任务提交后将以真实 LLM 运行（任务运行时生效）");
     }
   } else {
-    showToast("离线 Mock：任务使用 MockLLM 演示循环（写 mock-output.txt → 完成）");
+    showToast("离线 Mock：该任务提交后将以 MockLLM 运行（演示循环）");
   }
 }
 
