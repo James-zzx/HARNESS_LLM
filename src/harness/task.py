@@ -27,6 +27,7 @@ class Task:
     max_iterations: int = 10
     timeout: int | float = 120
     status: TaskStatus = TaskStatus.PENDING
+    llm_mode: Optional[str] = None
 
 
 def _require_str(data: Mapping[str, Any], name: str) -> str:
@@ -109,10 +110,18 @@ class TaskParser:
         eval_command = None
         if "eval_command" in data:
             eval_command = _require_str(data, "eval_command")
+        llm_mode = None
+        if "llm_mode" in data:
+            llm_mode = _require_str(data, "llm_mode")
+            if llm_mode not in {"mock", "real"}:
+                raise TaskError(
+                    f"Task field llm_mode must be 'mock' or 'real', got {llm_mode!r}"
+                )
         return Task(
             id=_require_str(data, "id"),
             prompt=_require_str(data, "prompt"),
             eval_command=eval_command,
             max_iterations=_require_int(data, "max_iterations", minimum=1, default=Task.max_iterations),
             timeout=_require_number(data, "timeout", default=Task.timeout),
+            llm_mode=llm_mode,
         )

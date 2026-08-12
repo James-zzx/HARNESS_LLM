@@ -555,3 +555,91 @@ def test_api_messages_redacts_secrets():
     assert "tok-456" not in response.text
     assert "hunter2" not in response.text
     assert "sk-abc" not in response.text
+
+
+# ---------- llm_mode runtime override (P6-10) ----------
+
+
+def _wait_for_task(manager, task_id, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        snapshot = manager.snapshot(task_id)
+        if snapshot["status"] in {"completed", "failed"}:
+            if snapshot["status"] != "failed" or snapshot.get("error"):
+                return snapshot
+        time.sleep(0.05)
+    return manager.snapshot(task_id)
+
+
+def _spy_build_llm(seen):
+    def spy_build_llm(config, credential_store=None):
+        seen["mock"] = config.llm.mock
+        return MockLLM([json.dumps({"done": True})])
+
+    return spy_build_llm
+
+
+def test_api_task_llm_mode_real_uses_real_llm(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr("harness.llm_adapter.build_llm", _spy_build_llm(seen))
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post(
+            "/api/tasks", json={"id": "api-real", "prompt": "do it", "llm_mode": "real"}
+        )
+        snapshot = _wait_for_task(manager, "api-real")
+
+    assert snapshot["status"] == "completed"
+    assert seen.get("mock") is False
+
+
+def test_api_task_llm_mode_mock_uses_mock(tmp_path, monkeypatch):
+    monkeypatch.setenv("HARNESS_LLM_MOCK", "false")
+    seen = {}
+    monkeypatch.setattr("harness.llm_adapter.build_llm", _spy_build_llm(seen))
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post(
+            "/api/tasks", json={"id": "api-mock", "prompt": "do it", "llm_mode": "mock"}
+        )
+        snapshot = _wait_for_task(manager, "api-mock")
+
+    assert snapshot["status"] == "completed"
+    assert seen.get("mock") is True
+
+
+def test_api_task_default_mock(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr("harness.llm_adapter.build_llm", _spy_build_llm(seen))
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-default", "prompt": "do it"})
+        snapshot = _wait_for_task(manager, "api-default")
+
+    assert snapshot["status"] == "completed"
+    assert seen.get("mock") is True
+
+
+def test_api_task_llm_mode_real_without_key_fails_clearly(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post(
+            "/api/tasks",
+            json={"id": "api-nokey", "prompt": "do it", "llm_mode": "real"},
+        )
+        snapshot = _wait_for_task(manager, "api-nokey")
+
+    assert snapshot["status"] == "failed"
+    assert "credential" in snapshot["error"].lower()

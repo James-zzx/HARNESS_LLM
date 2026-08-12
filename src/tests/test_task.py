@@ -67,3 +67,17 @@ def test_task_validation_type_error(work_dir):
 
     with pytest.raises(TaskError):
         TaskParser.load_yaml(str(task_file))
+
+
+def test_task_llm_mode_field():
+    assert TaskParser.from_dict({"id": "lm-1", "prompt": "p"}).llm_mode is None
+    assert (
+        TaskParser.from_dict({"id": "lm-2", "prompt": "p", "llm_mode": "mock"}).llm_mode
+        == "mock"
+    )
+    assert (
+        TaskParser.from_dict({"id": "lm-3", "prompt": "p", "llm_mode": "real"}).llm_mode
+        == "real"
+    )
+    with pytest.raises(TaskError):
+        TaskParser.from_dict({"id": "lm-4", "prompt": "p", "llm_mode": "auto"})

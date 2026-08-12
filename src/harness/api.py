@@ -208,7 +208,13 @@ def _default_runner() -> TaskRunner:
         message_queue: Optional[MessageQueue] = None,
         on_orchestrator: Optional[Callable[[Orchestrator], None]] = None,
     ) -> RunResult:
-        llm = build_llm(config)
+        llm_mode = getattr(task, "llm_mode", None)
+        task_config = config
+        if llm_mode in {"mock", "real"}:
+            task_config = dataclasses.replace(
+                config, llm=dataclasses.replace(config.llm, mock=(llm_mode == "mock"))
+            )
+        llm = build_llm(task_config)
         task_work_dir = tempfile.mkdtemp(
             prefix="harness-task-", dir=str(runtime.work_dir)
         )
