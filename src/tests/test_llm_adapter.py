@@ -150,6 +150,35 @@ def test_openai_client_posts_openai_format():
     assert result.content == "pong"
 
 
+def test_openai_client_converts_tool_messages():
+    captured = {}
+
+    def handler(request):
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json=_openai_response("pong"))
+
+    client = OpenAIClient(
+        api_key="test-key",
+        model="gpt-test",
+        transport=httpx.MockTransport(handler),
+    )
+    client.chat(
+        [
+            Message(role="system", content="sys"),
+            Message(role="user", content="hi"),
+            Message(role="tool", content='{"tool": "write_file", "success": true}'),
+        ]
+    )
+
+    roles = [m["role"] for m in captured["json"]["messages"]]
+    assert "tool" not in roles
+    assert captured["json"]["messages"] == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hi"},
+        {"role": "user", "content": 'tool result: {"tool": "write_file", "success": true}'},
+    ]
+
+
 def test_openai_client_parses_response():
     data = _openai_response("hello")
     data["choices"][0]["message"]["tool_calls"] = [

@@ -52,7 +52,7 @@ class OpenAIClient(LLMClient):
     def chat(self, messages: list[Message]) -> Response:
         payload = {
             "model": self._model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [self._serialize_message(m) for m in messages],
         }
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -69,6 +69,12 @@ class OpenAIClient(LLMClient):
             except httpx.TransportError as exc:
                 last_error = exc
         raise last_error
+
+    @staticmethod
+    def _serialize_message(m: Message) -> dict:
+        if m.role == "tool":
+            return {"role": "user", "content": f"tool result: {m.content}"}
+        return {"role": m.role, "content": m.content}
 
     @staticmethod
     def _parse_response(data: dict) -> Response:
