@@ -495,6 +495,58 @@ body {
   background: var(--surface-2);
 }
 
+/* ---------- task artifact files ---------- */
+
+.files-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 6px;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.file-row:hover {
+  background: var(--surface);
+}
+
+.file-name {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.file-viewer {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #0f172a;
+  color: #dbeafe;
+  border: 1px solid #1e293b;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .conversation-input-row {
   display: flex;
   align-items: stretch;
@@ -711,13 +763,15 @@ body {
 
 .task-list::-webkit-scrollbar,
 .log-area::-webkit-scrollbar,
-.conversation::-webkit-scrollbar {
+.conversation::-webkit-scrollbar,
+.file-viewer::-webkit-scrollbar {
   width: 10px;
 }
 
 .task-list::-webkit-scrollbar-thumb,
 .log-area::-webkit-scrollbar-thumb,
-.conversation::-webkit-scrollbar-thumb {
+.conversation::-webkit-scrollbar-thumb,
+.file-viewer::-webkit-scrollbar-thumb {
   background: rgba(100, 116, 139, 0.4);
   border-radius: 6px;
   border: 3px solid transparent;
