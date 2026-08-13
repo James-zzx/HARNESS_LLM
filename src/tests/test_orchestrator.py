@@ -318,3 +318,4 @@ def test_system_prompt_prefers_write_file(work_dir):
     assert "write_file" in _SYSTEM_PROMPT
     assert "ALWAYS prefer the write_file tool" in _SYSTEM_PROMPT
     assert "Windows shell" in _SYSTEM_PROMPT
+    assert "natural language" in _SYSTEM_PROMPT
