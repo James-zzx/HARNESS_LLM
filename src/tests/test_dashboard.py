@@ -155,3 +155,15 @@ def test_dashboard_api_key_button():
     assert '"/api/credential/"' in js
     assert 'method: "PUT"' in js
     assert 'method: "DELETE"' in js
+
+
+def test_dashboard_files_section():
+    html = _read("index.html")
+    assert "产物文件" in html
+    assert 'id="files-panel"' in html
+    assert 'id="files-list"' in html
+    assert 'id="file-viewer"' in html
+    js = _read("app.js")
+    assert '"/files"' in js
+    assert "/download" in js
+    assert "renderFiles" in js

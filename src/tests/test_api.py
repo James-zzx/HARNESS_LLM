@@ -467,6 +467,153 @@ def test_api_credential_missing_parts_404():
         assert client.delete("/api/credential//").status_code == 404
 
 
+# ---------- task artifact files (P6-12) ----------
+
+
+def test_api_files_list(tmp_path):
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    (work_dir / "result.txt").write_text("hello", encoding="utf-8")
+    (work_dir / "sub").mkdir()
+    (work_dir / "sub" / "nested.log").write_text("data", encoding="utf-8")
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager, runner=_PauseRunner())
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-files", "prompt": "hi"})
+        manager.set_work_dir("api-files", str(work_dir))
+        response = client.get("/api/tasks/api-files/files")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_id"] == "api-files"
+    files = {entry["path"]: entry["size"] for entry in body["files"]}
+    assert files == {"result.txt": 5, "sub/nested.log": 4}
+
+
+def test_api_files_read(tmp_path):
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    (work_dir / "note.md").write_text("hello world", encoding="utf-8")
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager, runner=_PauseRunner())
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-read", "prompt": "hi"})
+        manager.set_work_dir("api-read", str(work_dir))
+        response = client.get("/api/tasks/api-read/files/note.md")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_id"] == "api-read"
+    assert body["path"] == "note.md"
+    assert body["content"] == "hello world"
+
+
+def test_api_files_download(tmp_path):
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    (work_dir / "artifact.bin").write_bytes(b"\x00\x01\x02")
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager, runner=_PauseRunner())
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-dl", "prompt": "hi"})
+        manager.set_work_dir("api-dl", str(work_dir))
+        response = client.get("/api/tasks/api-dl/files/artifact.bin/download")
+
+    assert response.status_code == 200
+    assert response.content == b"\x00\x01\x02"
+
+
+def test_api_files_path_traversal_blocked(tmp_path):
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    (work_dir / "safe.txt").write_text("hello", encoding="utf-8")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("top secret", encoding="utf-8")
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager, runner=_PauseRunner())
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-trav", "prompt": "hi"})
+        manager.set_work_dir("api-trav", str(work_dir))
+        assert (
+            client.get("/api/tasks/api-trav/files/safe.txt").status_code == 200
+        )
+        for path in ("..%2Fsecret.txt", "%2E%2E%2Fsecret.txt"):
+            response = client.get(f"/api/tasks/api-trav/files/{path}")
+            assert response.status_code == 404, path
+        assert outside.read_text(encoding="utf-8") == "top secret"
+
+
+def test_api_files_no_workdir():
+    with _client() as client:
+        client.post("/api/tasks", json={"id": "api-nowd", "prompt": "hi"})
+        listing = client.get("/api/tasks/api-nowd/files")
+        assert listing.status_code == 200
+        assert listing.json()["files"] == []
+        assert (
+            client.get("/api/tasks/api-nowd/files/anything.txt").status_code
+            == 404
+        )
+
+
+def test_api_files_redacts_secrets(tmp_path):
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    (work_dir / "config.json").write_text(
+        '{"api_key": "sk-123", "token": "tok-456", "user": "alice"}',
+        encoding="utf-8",
+    )
+    (work_dir / "note.txt").write_text("db password=hunter2 ok", encoding="utf-8")
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager, runner=_PauseRunner())
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-redact", "prompt": "hi"})
+        manager.set_work_dir("api-redact", str(work_dir))
+        json_resp = client.get("/api/tasks/api-redact/files/config.json")
+        txt_resp = client.get("/api/tasks/api-redact/files/note.txt")
+
+    assert (
+        json_resp.json()["content"]
+        == '{"api_key": "***", "token": "***", "user": "alice"}'
+    )
+    assert txt_resp.json()["content"] == "db password=*** ok"
+    assert "sk-123" not in json_resp.text
+    assert "tok-456" not in json_resp.text
+    assert "hunter2" not in json_resp.text
+
+
+def test_api_files_workdir_wired_through_default_runner(tmp_path, monkeypatch):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM(
+            [
+                json.dumps(
+                    {
+                        "tool": "write_file",
+                        "params": {"path": "result.txt", "content": "hello"},
+                    }
+                ),
+                json.dumps({"done": True}),
+            ]
+        )
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-wd", "prompt": "write a file"})
+        snapshot = _wait_for_task(manager, "api-wd")
+        assert snapshot["status"] == "completed"
+        assert manager.get_work_dir("api-wd") is not None
+        body = client.get("/api/tasks/api-wd/files").json()
+        assert [entry["path"] for entry in body["files"]] == ["result.txt"]
+
+
 def test_api_messages_include_assistant(tmp_path, monkeypatch):
     def fake_build_llm(config, credential_store=None):
         return MockLLM(["ok I will do it", json.dumps({"done": True})])

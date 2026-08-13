@@ -6,6 +6,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional, Protocol
+from urllib.parse import unquote
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -38,23 +39,24 @@ def _redact_text(content: str) -> str:
     return _SENSITIVE_PAIR.sub(lambda match: match.group(1) + "***", content)
 
 
+def _redact_content(content: str) -> str:
+    stripped = content.strip()
+    if stripped[:1] in ("{", "["):
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, (dict, list)):
+            return json.dumps(redact_data(parsed), ensure_ascii=False)
+    return _redact_text(content)
+
+
 def redact_message(message: dict) -> dict:
     """Copy a message with sensitive content redacted before storage (§3.1)."""
     role = message.get("role")
     content = message.get("content")
     if isinstance(content, str):
-        stripped = content.strip()
-        if stripped[:1] in ("{", "["):
-            try:
-                parsed = json.loads(stripped)
-            except json.JSONDecodeError:
-                parsed = None
-            if isinstance(parsed, (dict, list)):
-                content = json.dumps(redact_data(parsed), ensure_ascii=False)
-            else:
-                content = _redact_text(content)
-        else:
-            content = _redact_text(content)
+        content = _redact_content(content)
     return {"role": role, "content": content}
 
 
@@ -85,6 +87,7 @@ class TaskRecord:
     messages: list[dict] = field(default_factory=list)
     interrupt_requested: bool = False
     orchestrator: Optional[Orchestrator] = None
+    work_dir: Optional[str] = None
 
 
 class TaskManager:
@@ -177,6 +180,14 @@ class TaskManager:
         with self._lock:
             return self._record(task_id).interrupt_requested
 
+    def set_work_dir(self, task_id: str, work_dir: str) -> None:
+        with self._lock:
+            self._record(task_id).work_dir = work_dir
+
+    def get_work_dir(self, task_id: str) -> Optional[str]:
+        with self._lock:
+            return self._record(task_id).work_dir
+
     def request_interrupt(self, task_id: str) -> bool:
         with self._lock:
             record = self._record(task_id)
@@ -194,7 +205,7 @@ def _map_status(status: str) -> TaskStatus:
         raise TaskError(f"unknown orchestrator status: {status}") from None
 
 
-def _default_runner() -> TaskRunner:
+def _default_runner(manager: Optional[TaskManager] = None) -> TaskRunner:
     from harness.config import load_config
     from harness.llm_adapter import build_llm
     from harness.runtime import build_runtime
@@ -218,6 +229,8 @@ def _default_runner() -> TaskRunner:
         task_work_dir = tempfile.mkdtemp(
             prefix="harness-task-", dir=str(runtime.work_dir)
         )
+        if manager is not None:
+            manager.set_work_dir(task.id, task_work_dir)
         orchestrator = runtime.build_orchestrator(
             llm=llm,
             work_dir=task_work_dir,
@@ -250,7 +263,7 @@ def create_app(
     credential_store: Optional[CredentialStore] = None,
 ) -> FastAPI:
     manager = task_manager or TaskManager()
-    run = runner or _default_runner()
+    run = runner or _default_runner(manager)
     store = credential_store if credential_store is not None else _default_credential_store()
 
     default_runtime = None
@@ -362,6 +375,44 @@ def create_app(
     def interrupt_task(task_id: str):
         requested = manager.request_interrupt(task_id)
         return {"task_id": task_id, "interrupt_requested": requested}
+
+    def _resolve_work_file(task_id: str, raw_path: str) -> Path:
+        work_dir = manager.get_work_dir(task_id)
+        if not work_dir:
+            raise TaskNotFoundError("task has no work directory")
+        base = Path(work_dir).resolve()
+        candidate = (base / unquote(raw_path)).resolve()
+        if not candidate.is_relative_to(base) or not candidate.is_file():
+            raise TaskNotFoundError("file not found")
+        return candidate
+
+    @app.get("/api/tasks/{task_id}/files")
+    def list_task_files(task_id: str):
+        work_dir = manager.get_work_dir(task_id)
+        files = []
+        if work_dir:
+            base = Path(work_dir).resolve()
+            if base.is_dir():
+                for path in sorted(base.rglob("*")):
+                    if path.is_file():
+                        files.append(
+                            {
+                                "path": path.relative_to(base).as_posix(),
+                                "size": path.stat().st_size,
+                            }
+                        )
+        return {"task_id": task_id, "files": files}
+
+    @app.get("/api/tasks/{task_id}/files/{path:path}/download")
+    def download_task_file(task_id: str, path: str):
+        file_path = _resolve_work_file(task_id, path)
+        return FileResponse(file_path, filename=file_path.name)
+
+    @app.get("/api/tasks/{task_id}/files/{path:path}")
+    def read_task_file(task_id: str, path: str):
+        file_path = _resolve_work_file(task_id, path)
+        content = file_path.read_text(encoding="utf-8", errors="replace")
+        return {"task_id": task_id, "path": path, "content": _redact_content(content)}
 
     def _require_credential_parts(service: str, key: str) -> None:
         if not service or not key:

@@ -207,6 +207,7 @@ function renderDetail() {
   renderInterrupt(task);
   renderLogs(task.logs || []);
   renderConversation(task);
+  renderFiles(task);
 }
 
 function renderHitl(task) {
@@ -229,6 +230,83 @@ function renderLogs(logs) {
     area.scrollHeight - area.scrollTop - area.clientHeight < 24;
   area.textContent = text;
   if (stick) area.scrollTop = area.scrollHeight;
+}
+
+function fileUrl(path) {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return (
+    "/api/tasks/" +
+    encodeURIComponent(selectedId) +
+    "/files/" +
+    encoded
+  );
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+async function viewTaskFile(path) {
+  const viewer = $("file-viewer");
+  viewer.classList.remove("hidden");
+  viewer.textContent = "加载中…";
+  try {
+    const res = await fetchJson(fileUrl(path));
+    viewer.textContent = res.content || "";
+  } catch (err) {
+    viewer.textContent = "读取失败：" + err.message;
+  }
+}
+
+async function renderFiles(task) {
+  const done = task.status === "completed" || task.status === "failed";
+  $("files-panel").classList.toggle("hidden", !done);
+  if (!done) return;
+  const list = $("files-list");
+  let files = [];
+  try {
+    const res = await fetchJson(
+      "/api/tasks/" + encodeURIComponent(selectedId) + "/files"
+    );
+    files = res.files || [];
+  } catch (err) {
+    files = [];
+  }
+  list.innerHTML = "";
+  if (files.length === 0) {
+    const hint = document.createElement("div");
+    hint.className = "empty-hint";
+    hint.textContent = "任务未生成产物文件";
+    list.appendChild(hint);
+    return;
+  }
+  for (const file of files) {
+    const row = document.createElement("div");
+    row.className = "file-row";
+    const name = document.createElement("span");
+    name.className = "file-name";
+    name.textContent = file.path;
+    name.title = file.path;
+    const size = document.createElement("span");
+    size.className = "file-size";
+    size.textContent = formatFileSize(file.size);
+    const view = document.createElement("button");
+    view.className = "btn";
+    view.type = "button";
+    view.textContent = "查看";
+    view.addEventListener("click", () => viewTaskFile(file.path));
+    const dl = document.createElement("a");
+    dl.className = "btn";
+    dl.href = fileUrl(file.path) + "/download";
+    dl.textContent = "下载";
+    row.appendChild(name);
+    row.appendChild(size);
+    row.appendChild(view);
+    row.appendChild(dl);
+    list.appendChild(row);
+  }
 }
 
 function renderConversation(task) {
