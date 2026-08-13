@@ -1,6 +1,7 @@
 from dataclasses import asdict
 from pathlib import Path
 import sys
+import tempfile
 
 import click
 import time
@@ -50,13 +51,15 @@ def run_command(task_path: str, config_path, verbose: bool, timeout) -> None:
         format=config.logging.format,
         file_path=config.logging.file_path,
     )
+    work_dir = tempfile.mkdtemp(prefix="harness-cli-")
+    click.echo(f"work_dir={work_dir}")
     result = (
         build_runtime(
             config,
             hitl_input_stream=sys.stdin,
             hitl_output_stream=sys.stdout,
         )
-        .build_orchestrator(llm=build_llm(config))
+        .build_orchestrator(llm=build_llm(config), work_dir=work_dir)
         .run(to_orchestrator_task(task))
     )
     click.echo(f"status={result.status} iterations={result.iterations} state={result.final_state}")

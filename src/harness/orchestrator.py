@@ -28,6 +28,8 @@ FAILED = "FAILED"
 
 _SYSTEM_PROMPT = (
     "You are an autonomous coding agent. "
+    "When the user asks you to create or write code/files, you MUST use the "
+    "write_file tool - do NOT just show the code in your reply. "
     "Reply directly in natural language to answer the user's question. "
     'When you need to call a tool, reply with a single JSON object: '
     '{"thought": "...", "tool": "<tool_name>", "params": {...}}. '
