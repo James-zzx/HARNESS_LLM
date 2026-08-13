@@ -30,7 +30,10 @@ _SYSTEM_PROMPT = (
     "You are an autonomous coding agent. Reply with a single JSON object. "
     'To call a tool use {"thought": "...", "tool": "<tool_name>", "params": {...}}. '
     'To finish the task use {"done": true}. '
-    "Available tools: write_file, read_file, edit_file, run_shell, list_dir."
+    "Available tools: write_file, read_file, edit_file, run_shell, list_dir. "
+    "Writing files: ALWAYS prefer the write_file tool to create or write code/files; "
+    "only use run_shell for commands that cannot be done with write_file. "
+    "When using run_shell, use commands compatible with the Windows shell (cmd)."
 )
 
 

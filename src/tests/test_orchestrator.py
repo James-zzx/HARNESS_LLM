@@ -310,3 +310,11 @@ def test_orchestrator_skips_whitespace_reply(work_dir):
 
     assert result.status == "COMPLETED"
     assert sink == []
+
+
+def test_system_prompt_prefers_write_file(work_dir):
+    from harness.orchestrator import _SYSTEM_PROMPT
+
+    assert "write_file" in _SYSTEM_PROMPT
+    assert "ALWAYS prefer the write_file tool" in _SYSTEM_PROMPT
+    assert "Windows shell" in _SYSTEM_PROMPT
