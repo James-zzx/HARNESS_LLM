@@ -516,8 +516,8 @@ Phase 5 (分发)                                       │
 - **Phase 3**: 2 个任务
 - **Phase 4**: 5 个任务 (含 Open Design 集成)
 - **Phase 5**: 3 个任务
-- **Phase 6**: 10 个任务 (Dashboard + 运行时对话 + API-Key 配置 + LLM 双模式 + 对话答复显示 + LLM 开关生效)
-- **合计**: 28 个任务
+- **Phase 6**: 11 个任务 (Dashboard + 运行时对话 + API-Key 配置 + LLM 双模式 + 对话答复显示 + LLM 开关生效 + 产物文件浏览器)
+- **合计**: 29 个任务
 
 ## Phase 6: WebUI Dashboard 与运行时对话
 
@@ -746,6 +746,32 @@ Phase 5 (分发)                                       │
   - [ ] `pytest src/tests/test_task.py src/tests/test_api.py` 全部通过
   - [ ] 全量 `pytest src/tests/` 无回归
   - [ ] 手动: dashboard 切"真实 LLM"提交任务 → 实际调用真实端点（本地 mock 验证）；切"离线" → 走 mock
+
+
+### P6-12: 产物文件浏览器（任务工作目录 + §3.1）
+- **依赖**: P6-09, P6-11
+- **并行**: —
+- **复杂度**: M
+- **涉及文件**: `src/harness/api.py`, `src/harness/webui/index.html`, `src/harness/webui/app.js`, `src/harness/webui/style.css`, `src/tests/test_api.py`, `src/tests/test_dashboard.py`, `SPEC.md`, `README.md`
+- **内容**:
+  - [ ] api.py: `TaskRecord` 增加 `work_dir: Optional[str] = None`；`_default_runner.run` 创建 `mkdtemp` 后 `manager.set_work_dir(task_id, task_work_dir)`
+  - [ ] api.py 新增端点:
+    - `GET /api/tasks/{id}/files` — 列出工作目录内文件（相对路径 + 大小；空/无 work_dir → 空列表）
+    - `GET /api/tasks/{id}/files/{path}` — 读取文件内容（**路径校验：必须在工作目录内，禁止 ../ 穿越**；内容脱敏敏感字段）
+    - `GET /api/tasks/{id}/files/{path}/download` — 下载（FileResponse，用户可保存）
+  - [ ] **§3.1**: 文件内容显示时脱敏（复用 logger 脱敏）；命令/凭据不暴露；路径穿越被拒（404）
+  - [ ] 前端: 任务详情加"产物文件"区（任务完成后显示文件列表；点击查看内容；下载按钮）
+- **TDD 先写测试**:
+  - [ ] `test_api_files_list`: 有 work_dir 的任务 → 列出文件
+  - [ ] `test_api_files_read`: 读文件内容（脱敏后）
+  - [ ] `test_api_files_path_traversal_blocked`: `../` 穿越 → 404
+  - [ ] `test_api_files_no_workdir`: 无 work_dir → 空列表/404
+  - [ ] `test_api_files_redacts_secrets`: 文件含 key/token → 显示脱敏（§3.1）
+  - [ ] `test_dashboard_files_section`: 页面含产物文件区元素
+- **验证步骤**:
+  - [ ] `pytest src/tests/test_api.py src/tests/test_dashboard.py` 全部通过
+  - [ ] 全量 `pytest src/tests/` 无回归
+  - [ ] 手动: DeepSeek 写文件任务 → 前端产物文件区显示文件，可查看/下载
 
 
 ## 完成清单

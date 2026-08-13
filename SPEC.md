@@ -129,6 +129,9 @@
   - `GET /api/credential/{service}/{key}` — 查询凭据是否已配置（返回 `{configured}`，不回显明文）
   - `PUT /api/credential/{service}/{key}` — 保存凭据（body: `{value}`，隐藏输入，非空校验，写入 CredentialStore）
   - `DELETE /api/credential/{service}/{key}` — 清除凭据
+  - `GET /api/tasks/{id}/files` — 列出任务工作目录的产物文件
+  - `GET /api/tasks/{id}/files/{path}` — 读取产物文件内容（**仅任务工作目录内，脱敏显示，不暴露凭据/命令，§3.1**）
+  - `GET /api/tasks/{id}/files/{path}/download` — 下载产物文件（用户可保存）
 - **新增 CLI**: `harness dashboard [--host 127.0.0.1] [--port 8000] [--config PATH]` — 启动 uvicorn 加载 API + 静态 dashboard，打印 URL，Ctrl+C 停止
 - **配置**: `HarnessConfig` 新增 `webui` 段（`host` / `port`，默认 127.0.0.1 / 8000）；CLI 参数可覆盖
 - **关键文件**: `src/harness/webui/`（index.html, app.js, style.css）, `src/harness/dashboard.py`, `src/harness/message_queue.py`, `src/tests/test_dashboard.py`, `src/tests/test_message_queue.py`
