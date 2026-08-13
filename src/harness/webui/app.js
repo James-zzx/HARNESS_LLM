@@ -250,6 +250,7 @@ function formatFileSize(bytes) {
 
 async function viewTaskFile(path) {
   const viewer = $("file-viewer");
+  viewer.setAttribute("data-task-id", selectedId);
   viewer.classList.remove("hidden");
   viewer.textContent = "加载中…";
   try {
@@ -264,6 +265,12 @@ async function renderFiles(task) {
   const id = selectedId;
   const done = task.status === "completed" || task.status === "failed";
   $("files-panel").classList.toggle("hidden", !done);
+  const viewer = $("file-viewer");
+  if (viewer.getAttribute("data-task-id") !== id) {
+    viewer.classList.add("hidden");
+    viewer.textContent = "";
+    viewer.setAttribute("data-task-id", id);
+  }
   if (!done) return;
   const list = $("files-list");
   let files = [];
