@@ -208,15 +208,25 @@ class Orchestrator:
                 )
                 continue
 
-            intent = self._parse_intent(response.content)
+            intent, was_json = self._parse_intent(response.content)
+            if intent is None and not was_json:
+                self._memory.add_message(role="assistant", content=response.content)
+                if self.conversation_sink is not None:
+                    self.conversation_sink({"role": "assistant", "content": response.content})
+                self._state = EVAL
+                eval_result = self._evaluator.evaluate(self._task)
+                self._memory.add_message(role="tool", content=self._format_eval_result(eval_result))
+                if eval_result.passed:
+                    self._state = COMPLETED
+                    logger.info("orchestrator.completed", iterations=self._iterations)
+                    return RunResult(status=COMPLETED, final_state=COMPLETED, iterations=self._iterations)
+                continue
             if intent is None:
                 self._memory.add_message(role="assistant", content=response.content)
                 self._memory.add_message(
                     role="tool",
                     content=json.dumps({"error": "intent must be a JSON object with 'tool' or 'done'"}),
                 )
-                if self.conversation_sink is not None:
-                    self.conversation_sink({"role": "assistant", "content": response.content})
                 continue
 
             if intent.get("done"):
@@ -269,25 +279,31 @@ class Orchestrator:
 
     @staticmethod
     def _parse_intent(content: str):
+        """Return (intent_or_None, was_json).
+
+        - (dict, True): valid JSON dict intent
+        - (None, True): valid JSON but not a dict (malformed intent)
+        - (None, False): not JSON at all (natural-language reply)
+        """
         text = content.strip()
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, dict):
-            return parsed
+            return parsed, True
         if parsed is not None:
-            return None
+            return None, True
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end > start:
             try:
                 candidate = json.loads(text[start : end + 1])
             except json.JSONDecodeError:
-                return None
+                return None, False
             if isinstance(candidate, dict):
-                return candidate
-        return None
+                return candidate, True
+        return None, False
 
     @staticmethod
     def _format_tool_result(tool_name: str, result) -> str:
