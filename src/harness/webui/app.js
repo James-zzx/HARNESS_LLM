@@ -261,6 +261,7 @@ async function viewTaskFile(path) {
 }
 
 async function renderFiles(task) {
+  const id = selectedId;
   const done = task.status === "completed" || task.status === "failed";
   $("files-panel").classList.toggle("hidden", !done);
   if (!done) return;
@@ -268,12 +269,13 @@ async function renderFiles(task) {
   let files = [];
   try {
     const res = await fetchJson(
-      "/api/tasks/" + encodeURIComponent(selectedId) + "/files"
+      "/api/tasks/" + encodeURIComponent(id) + "/files"
     );
     files = res.files || [];
   } catch (err) {
     files = [];
   }
+  if (id !== selectedId) return;
   list.innerHTML = "";
   if (files.length === 0) {
     const hint = document.createElement("div");
@@ -312,12 +314,17 @@ async function renderFiles(task) {
 function renderConversation(task) {
   const box = $("conversation");
   const messages = task.messages || [];
+  const switched = box.getAttribute("data-task-id") !== selectedId;
+  box.setAttribute("data-task-id", selectedId);
+  const stick =
+    switched || box.scrollHeight - box.scrollTop - box.clientHeight < 24;
   box.innerHTML = "";
   if (messages.length === 0) {
     const hint = document.createElement("div");
     hint.className = "empty-hint";
     hint.textContent = "暂无消息。任务运行中输入内容并发送，可向 Agent 注入指令。";
     box.appendChild(hint);
+    box.scrollTop = box.scrollHeight;
     return;
   }
   for (const message of messages) {
@@ -334,7 +341,7 @@ function renderConversation(task) {
     row.appendChild(content);
     box.appendChild(row);
   }
-  box.scrollTop = box.scrollHeight;
+  if (stick) box.scrollTop = box.scrollHeight;
 }
 
 function selectTask(id) {

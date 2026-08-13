@@ -167,3 +167,36 @@ def test_dashboard_files_section():
     assert '"/files"' in js
     assert "/download" in js
     assert "renderFiles" in js
+
+
+def _function_body(js: str, name: str) -> str:
+    start = js.index(f"function {name}(")
+    start = js.index("{", start)
+    depth = 0
+    for i in range(start, len(js)):
+        ch = js[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return js[start : i + 1]
+    raise AssertionError(f"function {name} not closed")
+
+
+def test_dashboard_conversation_keeps_scroll_position():
+    js = _read("app.js")
+    body = _function_body(js, "renderConversation")
+    assert "getAttribute(\"data-task-id\")" in body
+    assert "setAttribute(\"data-task-id\", selectedId)" in body
+    assert "scrollHeight - box.scrollTop - box.clientHeight < 24" in body
+    assert "if (stick) box.scrollTop = box.scrollHeight;" in body
+
+
+def test_dashboard_render_files_guards_stale_task():
+    js = _read("app.js")
+    body = _function_body(js, "renderFiles")
+    assert 'encodeURIComponent(id)' in body
+    assert "id !== selectedId" in body
+    assert "if (id !== selectedId) return;" in body
+
