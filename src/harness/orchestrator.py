@@ -292,6 +292,8 @@ class Orchestrator:
             parsed = None
         if isinstance(parsed, dict):
             return parsed, True
+        if isinstance(parsed, str):
+            return None, False
         if parsed is not None:
             return None, True
         start = text.find("{")
