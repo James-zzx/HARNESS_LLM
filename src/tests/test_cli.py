@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -52,6 +53,42 @@ def test_cli_run(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "COMPLETED" in result.output
+
+
+def test_cli_run_uses_temp_work_dir(tmp_path, monkeypatch):
+    task = tmp_path / "task.yaml"
+    task.write_text("id: t1\nprompt: write hello\nmax_iterations: 3\n", encoding="utf-8")
+    config = tmp_path / "harness.yaml"
+    config.write_text("llm:\n  mock: true\n", encoding="utf-8")
+
+    captured = {}
+
+    class _FakeOrchestrator:
+        def run(self, task):
+            return RunResult(
+                status="COMPLETED",
+                final_state="COMPLETED",
+                iterations=1,
+            )
+
+    class _FakeRuntime:
+        def build_orchestrator(self, llm, **kwargs):
+            captured["work_dir"] = kwargs.get("work_dir")
+            return _FakeOrchestrator()
+
+    monkeypatch.setattr(
+        "harness.main.build_runtime", lambda config, **kwargs: _FakeRuntime()
+    )
+    monkeypatch.setattr("harness.main.build_llm", lambda config: None)
+
+    result = CliRunner().invoke(cli, ["run", str(task), "--config", str(config)])
+
+    assert result.exit_code == 0
+    work_dir = captured["work_dir"]
+    assert work_dir is not None
+    assert "harness-cli-" in str(work_dir)
+    assert str(work_dir) != str(Path(".").resolve())
+    assert work_dir in result.output
 
 
 def test_cli_config_show(tmp_path):

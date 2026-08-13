@@ -319,3 +319,10 @@ def test_system_prompt_prefers_write_file(work_dir):
     assert "ALWAYS prefer the write_file tool" in _SYSTEM_PROMPT
     assert "Windows shell" in _SYSTEM_PROMPT
     assert "natural language" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_forces_write_file_for_code(work_dir):
+    from harness.orchestrator import _SYSTEM_PROMPT
+
+    assert "MUST use the write_file tool" in _SYSTEM_PROMPT
+    assert "do NOT just show the code" in _SYSTEM_PROMPT
