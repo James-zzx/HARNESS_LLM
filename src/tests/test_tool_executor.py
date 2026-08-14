@@ -32,6 +32,20 @@ def test_write_and_read_file(executor, work_dir):
     assert read.output == "hello harness"
 
 
+def test_write_file_path_aliases(executor, work_dir):
+    """LLMs sometimes emit ``file_path`` or ``filepath`` instead of ``path``; all must work."""
+    for key in ("file_path", "filepath"):
+        result = executor.execute(
+            {"tool": "write_file", "params": {key: f"{key}.txt", "content": "via alias"}}
+        )
+        assert result.success is True, (key, result.error)
+        assert (work_dir / f"{key}.txt").read_text(encoding="utf-8") == "via alias"
+
+        read = executor.execute({"tool": "read_file", "params": {key: f"{key}.txt"}})
+        assert read.success is True
+        assert read.output == "via alias"
+
+
 def test_edit_file(executor, work_dir):
     (work_dir / "doc.txt").write_text("the quick brown fox", encoding="utf-8")
 

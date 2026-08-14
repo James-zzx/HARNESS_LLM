@@ -25,6 +25,15 @@ def test_sandbox_allows_whitelist_path(tmp_path):
     assert check("write_file", {"path": str(target)}) is True
 
 
+def test_sandbox_check_honors_path_aliases(tmp_path):
+    sb, allowed = _sandbox(tmp_path)
+    check = sb.build_check()
+
+    for key in ("path", "file_path", "filepath"):
+        assert check("write_file", {key: "notes.txt"}) is True, key
+        assert check("read_file", {key: "notes.txt"}) is True, key
+
+
 def test_sandbox_blocks_blacklist_path(tmp_path):
     allowed = tmp_path / "workspace"
     allowed.mkdir()

@@ -257,7 +257,13 @@ class Sandbox:
     def build_check(self) -> Callable[[str, Dict[str, Any]], bool]:
         def check(tool_name: str, params: Dict[str, Any]) -> bool:
             if tool_name in _PATH_TOOLS:
-                return self.is_allowed_path(params.get("path", ""))
+                path = ""
+                for key in ("path", "file_path", "filepath"):
+                    raw = params.get(key)
+                    if raw is not None:
+                        path = str(raw)
+                        break
+                return self.is_allowed_path(path)
             if tool_name == "run_shell":
                 return self.check_command(params.get("command", ""))
             return True

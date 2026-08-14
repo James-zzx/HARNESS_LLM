@@ -26,6 +26,19 @@ class Tool:
         raise NotImplementedError
 
 
+_PATH_KEYS = ("path", "file_path", "filepath")
+
+
+def _path_param(params: dict) -> str:
+    """Return the target path from tool params, honoring the aliases some
+    LLMs emit alongside the canonical ``path`` key (``file_path``, ``filepath``)."""
+    for key in _PATH_KEYS:
+        raw = params.get(key)
+        if raw is not None:
+            return str(raw)
+    return ""
+
+
 class _PathTool(Tool):
     def __init__(self, work_dir: Path):
         self._work_dir = work_dir.resolve()
@@ -43,7 +56,7 @@ class ReadFileTool(_PathTool):
 
     def execute(self, params: Dict[str, Any]) -> ToolResult:
         try:
-            path = self._resolve(params.get("path", ""))
+            path = self._resolve(_path_param(params))
             return ToolResult(success=True, output=path.read_text(encoding="utf-8"))
         except (OSError, ValueError, UnicodeDecodeError) as exc:
             return ToolResult(success=False, error=str(exc))
@@ -55,7 +68,7 @@ class WriteFileTool(_PathTool):
 
     def execute(self, params: Dict[str, Any]) -> ToolResult:
         try:
-            path = self._resolve(params.get("path", ""))
+            path = self._resolve(_path_param(params))
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(str(params.get("content", "")), encoding="utf-8")
             return ToolResult(success=True, output=f"wrote {path}")
@@ -69,7 +82,7 @@ class EditFileTool(_PathTool):
 
     def execute(self, params: Dict[str, Any]) -> ToolResult:
         try:
-            path = self._resolve(params.get("path", ""))
+            path = self._resolve(_path_param(params))
             old_string = params.get("old_string", "")
             new_string = params.get("new_string", "")
             if not old_string:
@@ -161,7 +174,7 @@ class ListDirTool(_PathTool):
 
     def execute(self, params: Dict[str, Any]) -> ToolResult:
         try:
-            path = self._resolve(params.get("path", "."))
+            path = self._resolve(_path_param(params) or ".")
             entries = "\n".join(sorted(entry.name for entry in path.iterdir()))
             return ToolResult(success=True, output=entries)
         except (OSError, ValueError) as exc:
