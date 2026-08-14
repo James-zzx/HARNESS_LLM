@@ -329,3 +329,4 @@ def test_system_prompt_forces_write_file_for_code(work_dir):
     assert "retry with a corrected relative path" in _SYSTEM_PROMPT
     assert "NEVER use run_shell to create or write files" in _SYSTEM_PROMPT
     assert "do NOT just show the code" in _SYSTEM_PROMPT
+    assert "FIRST reply in natural language with a brief summary" in _SYSTEM_PROMPT

@@ -33,7 +33,8 @@ _SYSTEM_PROMPT = (
     "Reply directly in natural language to answer the user's question. "
     'When you need to call a tool, reply with a single JSON object: '
     '{"thought": "...", "tool": "<tool_name>", "params": {...}}. '
-    'When the task is finished, reply with {"done": true}. '
+    'When the task is finished, FIRST reply in natural language with a brief '
+    'summary of what you did and the result, THEN reply with {"done": true}. '
     "Available tools: write_file, read_file, edit_file, run_shell, list_dir. "
     "Writing files: ALWAYS use the write_file tool to create or write code/files; "
     "NEVER use run_shell to create or write files (e.g. no 'echo ... > file', "
