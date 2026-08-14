@@ -28,6 +28,7 @@ class Task:
     timeout: int | float = 120
     status: TaskStatus = TaskStatus.PENDING
     llm_mode: Optional[str] = None
+    base_url: Optional[str] = None
 
 
 def _require_str(data: Mapping[str, Any], name: str) -> str:
@@ -117,6 +118,9 @@ class TaskParser:
                 raise TaskError(
                     f"Task field llm_mode must be 'mock' or 'real', got {llm_mode!r}"
                 )
+        base_url = None
+        if "base_url" in data:
+            base_url = _require_str(data, "base_url")
         return Task(
             id=_require_str(data, "id"),
             prompt=_require_str(data, "prompt"),
@@ -124,4 +128,5 @@ class TaskParser:
             max_iterations=_require_int(data, "max_iterations", minimum=1, default=Task.max_iterations),
             timeout=_require_number(data, "timeout", default=Task.timeout),
             llm_mode=llm_mode,
+            base_url=base_url,
         )

@@ -15,7 +15,7 @@ from harness.api import (
 )
 from harness.credential_store import CredentialStore, MemoryBackend
 from harness.hitl import GuardrailEngine, HITLGate
-from harness.llm_adapter import Response
+from harness.llm_adapter import OpenAIClient, Response
 from harness.message_queue import MessageQueue
 from harness.mock_llm import MockLLM
 from harness.orchestrator import RunResult, Task
@@ -791,3 +791,42 @@ def test_api_task_llm_mode_real_without_key_fails_clearly(tmp_path, monkeypatch)
 
     assert snapshot["status"] == "failed"
     assert "credential" in snapshot["error"].lower()
+
+
+# ---------- task-level base_url runtime override ----------
+
+
+def test_api_task_base_url_used_in_build_llm(tmp_path, monkeypatch):
+    from harness import llm_adapter
+
+    real_build_llm = llm_adapter.build_llm
+    seen = {}
+
+    def spy_build_llm(config, credential_store=None):
+        client = real_build_llm(config, credential_store=credential_store)
+        seen["client"] = client
+        seen["base_url"] = config.llm.base_url
+        return MockLLM([json.dumps({"done": True})])
+
+    monkeypatch.setattr("keyring.get_password", lambda service, key: "sk-test")
+    monkeypatch.setattr("harness.llm_adapter.build_llm", spy_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post(
+            "/api/tasks",
+            json={
+                "id": "api-base-url",
+                "prompt": "do it",
+                "llm_mode": "real",
+                "base_url": "http://127.0.0.1:9888/v1",
+            },
+        )
+        snapshot = _wait_for_task(manager, "api-base-url")
+
+    assert snapshot["status"] == "completed"
+    assert seen.get("base_url") == "http://127.0.0.1:9888/v1"
+    assert isinstance(seen["client"], OpenAIClient)
+    assert seen["client"]._base_url == "http://127.0.0.1:9888/v1"

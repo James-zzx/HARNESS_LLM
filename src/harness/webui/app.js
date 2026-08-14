@@ -780,6 +780,8 @@ $("task-form").addEventListener("submit", async (event) => {
     return;
   }
   task.llm_mode = getLlmMode();
+  const baseUrl = $("cred-base-url").value.trim();
+  if (baseUrl) task.base_url = baseUrl;
   const submitBtn = $("form-submit");
   submitBtn.disabled = true;
   try {
