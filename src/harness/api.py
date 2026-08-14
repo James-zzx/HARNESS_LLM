@@ -38,7 +38,11 @@ _SENSITIVE_PAIR = re.compile(
 def _make_task_work_dir(base: Path, task_id: str) -> str:
     tasks_dir = Path(base) / "harness-tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
-    if task_id and not any(sep in task_id for sep in ("/", "\\")):
+    if (
+        task_id
+        and task_id.strip() not in {".", ".."}
+        and not any(sep in task_id for sep in ("/", "\\"))
+    ):
         work_dir = tasks_dir / task_id
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)

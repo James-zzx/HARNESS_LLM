@@ -883,3 +883,26 @@ def test_api_work_dir_added_to_sandbox_allowed_dirs(tmp_path, monkeypatch):
 
     work_dir = Path(manager.get_work_dir("api-sb")).resolve()
     assert work_dir.is_dir()
+
+
+@pytest.mark.parametrize("bad_id", ["..", "."])
+def test_api_work_dir_dot_ids_fall_back_inside_harness_tasks(
+    tmp_path, monkeypatch, bad_id
+):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM([json.dumps({"done": True})])
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": bad_id, "prompt": "write"})
+        snapshot = _wait_for_task(manager, bad_id)
+
+    assert snapshot["status"] == "completed"
+    work_dir = Path(manager.get_work_dir(bad_id)).resolve()
+    base = Path(tmp_path).resolve()
+    assert work_dir != base
+    assert work_dir.is_relative_to(base / "harness-tasks")
