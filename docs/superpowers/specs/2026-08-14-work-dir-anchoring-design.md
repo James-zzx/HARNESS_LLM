@@ -47,9 +47,26 @@ def allow_dir(self, path):
 
 `_PathTool._resolve` 已锚定 work_dir 并拒绝 `..`/绝对越界路径（tool_executor.py:33-37），无需改动。这是沙箱预检之外的第二道防线。
 
-### ④ .gitignore
+### ④ 修复 run_shell 的 cwd Bug（sandbox.py）
+
+**Bug**：`Sandbox.run`（sandbox.py:283）`Popen(command, shell=True, **popen_kwargs)` **未传 `cwd`** → run_shell 在沙箱启用时继承进程 cwd（dashboard = 项目根），而非 work_dir。无沙箱的 `_run_subprocess`（tool_executor.py:132）有 `cwd=str(self._work_dir)`，两者不一致。
+
+**后果**：LLM 用 run_shell 写文件/执行测试时落到项目根而非 work_dir → 文件区空、项目被污染；`python multiplication.py` 找不到 work_dir 里的文件。
+
+**修复**：`Sandbox.run` 增加 `cwd` 参数（默认 `None` 保持现行为），`RunShellTool._run_via_sandbox` 传入 `cwd=str(self._work_dir)`。有沙箱时 run_shell 的 cwd 与无沙箱一致 = work_dir。
+
+### ⑤ .gitignore
 
 新增一行 `harness-tasks/`。
+
+### ⑥ 收尾动作（后续文档同步）
+
+本次 spec 方案（work_dir 锚定 + run_shell cwd 修复）需在收尾阶段同步到核心交付文档：
+- `README.md`：安全边界说明章节（§4）——补充 work_dir 锚定、run_shell cwd 行为、harness-tasks/ 目录说明。
+- `SPEC.md`：机制设计章节（§A.5 治理/沙箱）——补充写文件路径硬锚定机制。
+- `docs/` 下架构/安全文档（如有）：同步 work_dir 与 run_shell 沙箱行为。
+
+此项仅记录，不在本次实现范围。
 
 ## 数据流
 
@@ -82,12 +99,14 @@ LLM 意图 write_file path=X
    - 越界路径（`../`、系统绝对路径）→ 仍拒绝。
    - `allow_dir` 幂等：同一目录重复调用不重复追加。
    - `allow_dir` 传入 work_dir 的祖先目录（如项目根）时幂等。
+   - `Sandbox.run` 传入 `cwd` 时，子进程在指定 cwd 执行（`cd` 输出断言）。
 2. `test_api.py`：
    - 新建任务后 `manager.get_work_dir(task_id)` 落在 `<项目根>/harness-tasks/<task_id>`。
    - `harness-tasks/` 不存在时自动创建。
    - 沙箱 allowed_dirs 含该任务 work_dir。
 3. `test_tool_executor.py`：
    - 既有 `test_path_traversal_blocked` 保持（回归双保险）。
+   - 新增：有沙箱时 `run_shell` 的 cwd = work_dir（`cd` 输出断言），与无沙箱行为一致。
 
 ## 验证步骤
 
@@ -95,3 +114,4 @@ LLM 意图 write_file path=X
 2. 用 mock LLM 提交写文件任务，确认产物出现在 `<项目根>/harness-tasks/<task_id>/` 且 `GET /api/tasks/{id}/files` 能列出。
 3. 删除 `harness-tasks/` 后重启 dashboard 并提交任务，确认自动重建。
 4. 提交 `.gitignore` 改动，确认 `harness-tasks/` 未被 git 跟踪。
+5. 用真实 LLM 提交任务，确认 run_shell 在 work_dir 内执行（`python multiplication.py` 能读到 write_file 写入的文件）。
