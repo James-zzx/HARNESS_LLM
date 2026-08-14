@@ -102,7 +102,7 @@ class RunShellTool(Tool):
         return self._run_subprocess(command)
 
     def _run_via_sandbox(self, command: str) -> ToolResult:
-        result = self._sandbox.run(command, timeout=self._timeout)
+        result = self._sandbox.run(command, timeout=self._timeout, cwd=str(self._work_dir))
         if result.error:
             return ToolResult(success=False, error=result.error, exit_code=result.returncode)
         if result.timed_out:

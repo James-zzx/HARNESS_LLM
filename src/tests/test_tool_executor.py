@@ -169,3 +169,23 @@ def test_sandbox_check_receives_shell_command(work_dir):
 
     assert result.success is False
     assert seen.get("run_shell") == "rm -rf /"
+
+
+def test_run_shell_sandbox_uses_work_dir_cwd(work_dir, tmp_path):
+    from harness.sandbox import Sandbox
+
+    sandbox = Sandbox(allowed_dirs=[str(work_dir)])
+    executor = ToolExecutor(work_dir=str(work_dir), sandbox=sandbox, shell_timeout=30)
+
+    result = executor.execute(
+        {
+            "tool": "run_shell",
+            "params": {
+                "command": f'"{sys.executable}" -c "import os; print(os.getcwd())"'
+            },
+        }
+    )
+    assert result.success is True
+    normalized = result.output.strip().lower().replace("\\\\", "/")
+    expected = str(work_dir).lower().replace("\\\\", "/")
+    assert normalized == expected
