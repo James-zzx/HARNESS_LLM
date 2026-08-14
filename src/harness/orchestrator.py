@@ -37,6 +37,10 @@ _SYSTEM_PROMPT = (
     "Available tools: write_file, read_file, edit_file, run_shell, list_dir. "
     "Writing files: ALWAYS prefer the write_file tool to create or write code/files; "
     "only use run_shell for commands that cannot be done with write_file. "
+    "Use RELATIVE file paths (e.g. 'multiplication.py') for write_file/read_file/"
+    "edit_file/list_dir - never absolute paths, never '..' or system directories. "
+    "If a tool reports a sandbox denial or an error, retry with a corrected "
+    "relative path instead of giving up. "
     "When using run_shell, use commands compatible with the Windows shell (cmd)."
 )
 

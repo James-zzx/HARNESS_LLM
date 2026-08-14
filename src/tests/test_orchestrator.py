@@ -325,4 +325,6 @@ def test_system_prompt_forces_write_file_for_code(work_dir):
     from harness.orchestrator import _SYSTEM_PROMPT
 
     assert "MUST use the write_file tool" in _SYSTEM_PROMPT
+    assert "RELATIVE file paths" in _SYSTEM_PROMPT
+    assert "retry with a corrected relative path" in _SYSTEM_PROMPT
     assert "do NOT just show the code" in _SYSTEM_PROMPT
