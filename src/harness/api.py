@@ -225,6 +225,11 @@ def _default_runner(manager: Optional[TaskManager] = None) -> TaskRunner:
             task_config = dataclasses.replace(
                 config, llm=dataclasses.replace(config.llm, mock=(llm_mode == "mock"))
             )
+        base_url = getattr(task, "base_url", None)
+        if base_url:
+            task_config = dataclasses.replace(
+                task_config, llm=dataclasses.replace(task_config.llm, base_url=base_url)
+            )
         llm = build_llm(task_config)
         task_work_dir = tempfile.mkdtemp(
             prefix="harness-task-", dir=str(runtime.work_dir)

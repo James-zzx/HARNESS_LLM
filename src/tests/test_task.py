@@ -81,3 +81,19 @@ def test_task_llm_mode_field():
     )
     with pytest.raises(TaskError):
         TaskParser.from_dict({"id": "lm-4", "prompt": "p", "llm_mode": "auto"})
+
+
+def test_task_base_url_field():
+    assert TaskParser.from_dict({"id": "bu-1", "prompt": "p"}).base_url is None
+    assert (
+        TaskParser.from_dict(
+            {
+                "id": "bu-2",
+                "prompt": "p",
+                "base_url": "https://api.deepseek.com/v1",
+            }
+        ).base_url
+        == "https://api.deepseek.com/v1"
+    )
+    with pytest.raises(TaskError):
+        TaskParser.from_dict({"id": "bu-3", "prompt": "p", "base_url": 42})

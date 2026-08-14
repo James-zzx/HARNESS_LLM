@@ -157,6 +157,18 @@ def test_dashboard_api_key_button():
     assert 'method: "DELETE"' in js
 
 
+def test_dashboard_base_url_input():
+    html = _read("index.html")
+    assert 'id="cred-base-url"' in html
+    assert 'type="text"' in html
+    js = _read("app.js")
+    start = js.index('$("task-form").addEventListener("submit"')
+    end = js.index('$("hitl-approve")')
+    handler = js[start:end]
+    assert "task.base_url" in handler
+    assert '$("cred-base-url").value.trim()' in handler
+
+
 def test_dashboard_files_section():
     html = _read("index.html")
     assert "产物文件" in html
