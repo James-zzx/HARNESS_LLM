@@ -203,6 +203,44 @@ def test_sandbox_allow_dir_is_idempotent(tmp_path):
     assert sum(1 for a in sb.allowed_dirs if a == str(extra.resolve())) == 1
 
 
+def test_sandbox_allow_dir_ancestor_idempotent(tmp_path):
+    allowed = tmp_path / "workspace"
+    allowed.mkdir()
+    sb = Sandbox(allowed_dirs=[str(allowed)])
+    ancestor = tmp_path
+    sb.allow_dir(str(ancestor))
+    sb.allow_dir(str(ancestor))
+    assert sum(1 for a in sb.allowed_dirs if a == str(ancestor.resolve())) == 1
+
+
+def test_sandbox_allow_dir_concurrent_no_duplicates(tmp_path):
+    allowed = tmp_path / "workspace"
+    allowed.mkdir()
+    sb = Sandbox(allowed_dirs=[str(allowed)])
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    barrier = threading.Barrier(8)
+
+    def add():
+        barrier.wait()
+        for _ in range(200):
+            sb.allow_dir(str(extra))
+
+    threads = [threading.Thread(target=add) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert sum(1 for a in sb.allowed_dirs if a == str(extra.resolve())) == 1
+
+
+def test_sandbox_run_nonexistent_cwd_returns_error(tmp_path):
+    sb = Sandbox(allowed_dirs=[str(tmp_path)])
+    result = sb.run("echo hi", shell=True, cwd=str(tmp_path / "missing"))
+    assert result.error is not None
+
+
 def test_sandbox_run_respects_cwd(tmp_path):
     sb = Sandbox(allowed_dirs=[str(tmp_path)])
     target = tmp_path / "cwd_target"

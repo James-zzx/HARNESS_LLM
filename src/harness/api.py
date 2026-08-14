@@ -34,15 +34,21 @@ _SENSITIVE_PAIR = re.compile(
     r"(\"[^\"]*\"|'[^']*'|[^\s\"',}]+)"
 )
 
+_TASK_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _valid_task_dir_name(task_id: str) -> bool:
+    if not task_id or task_id in (".", ".."):
+        return False
+    if task_id != task_id.rstrip(" ."):
+        return False
+    return bool(_TASK_ID_RE.fullmatch(task_id))
+
 
 def _make_task_work_dir(base: Path, task_id: str) -> str:
     tasks_dir = Path(base) / "harness-tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
-    if (
-        task_id
-        and task_id.strip() not in {".", ".."}
-        and not any(sep in task_id for sep in ("/", "\\"))
-    ):
+    if _valid_task_dir_name(task_id):
         work_dir = tasks_dir / task_id
         work_dir.mkdir(parents=True, exist_ok=True)
         return str(work_dir)

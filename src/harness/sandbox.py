@@ -212,6 +212,7 @@ class Sandbox:
         self._processes: set = set()
         self._blocked_paths = [Path(b).resolve() for b in self.blocked_dirs]
         self._allowed_paths = [Path(a).resolve() for a in self.allowed_dirs]
+        self._lock = threading.Lock()
 
     def _resolve_candidates(self, path: Union[str, Path]) -> List[Path]:
         candidate = Path(path)
@@ -231,10 +232,11 @@ class Sandbox:
 
     def allow_dir(self, path: Union[str, Path]) -> None:
         resolved = Path(path).resolve()
-        if any(resolved == a or _is_within(resolved, a) for a in self._allowed_paths):
-            return
-        self._allowed_paths.append(resolved)
-        self.allowed_dirs.append(str(resolved))
+        with self._lock:
+            if any(resolved == a or _is_within(resolved, a) for a in self._allowed_paths):
+                return
+            self._allowed_paths.append(resolved)
+            self.allowed_dirs.append(str(resolved))
 
     def check_command(self, command: Union[str, Sequence[str]]) -> bool:
         if isinstance(command, (list, tuple)):
@@ -289,10 +291,13 @@ class Sandbox:
         )
         if cwd is not None:
             popen_kwargs["cwd"] = str(cwd)
-        if shell:
-            proc = subprocess.Popen(command, shell=True, **popen_kwargs)
-        else:
-            proc = subprocess.Popen(list(command), shell=False, **popen_kwargs)
+        try:
+            if shell:
+                proc = subprocess.Popen(command, shell=True, **popen_kwargs)
+            else:
+                proc = subprocess.Popen(list(command), shell=False, **popen_kwargs)
+        except OSError as exc:
+            return RunResult(error=str(exc))
 
         self._processes.add(proc)
         try:

@@ -171,7 +171,7 @@ def test_sandbox_check_receives_shell_command(work_dir):
     assert seen.get("run_shell") == "rm -rf /"
 
 
-def test_run_shell_sandbox_uses_work_dir_cwd(work_dir, tmp_path):
+def test_run_shell_sandbox_uses_work_dir_cwd(work_dir):
     from harness.sandbox import Sandbox
 
     sandbox = Sandbox(allowed_dirs=[str(work_dir)])
@@ -186,6 +186,6 @@ def test_run_shell_sandbox_uses_work_dir_cwd(work_dir, tmp_path):
         }
     )
     assert result.success is True
-    normalized = result.output.strip().lower().replace("\\\\", "/")
-    expected = str(work_dir).lower().replace("\\\\", "/")
+    normalized = result.output.strip().lower().replace("\\", "/")
+    expected = str(work_dir).lower().replace("\\", "/")
     assert normalized == expected
