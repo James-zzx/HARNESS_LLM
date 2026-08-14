@@ -251,13 +251,14 @@ def test_sandbox_run_nonexistent_cwd_returns_error(tmp_path):
 
 
 def test_sandbox_run_respects_cwd(tmp_path):
+    import sys
+
     sb = Sandbox(allowed_dirs=[str(tmp_path)])
     target = tmp_path / "cwd_target"
     target.mkdir()
 
     result = sb.run(
-        "cd",
-        shell=True,
+        [sys.executable, "-c", "import os; print(os.getcwd())"],
         cwd=str(target),
     )
     assert result.returncode == 0
