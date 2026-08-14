@@ -35,8 +35,10 @@ _SYSTEM_PROMPT = (
     '{"thought": "...", "tool": "<tool_name>", "params": {...}}. '
     'When the task is finished, reply with {"done": true}. '
     "Available tools: write_file, read_file, edit_file, run_shell, list_dir. "
-    "Writing files: ALWAYS prefer the write_file tool to create or write code/files; "
-    "only use run_shell for commands that cannot be done with write_file. "
+    "Writing files: ALWAYS use the write_file tool to create or write code/files; "
+    "NEVER use run_shell to create or write files (e.g. no 'echo ... > file', "
+    "no 'cat > file', no shell redirection). run_shell is only for commands that "
+    "need a shell (testing, build, git). "
     "Use RELATIVE file paths (e.g. 'multiplication.py') for write_file/read_file/"
     "edit_file/list_dir - never absolute paths, never '..' or system directories. "
     "If a tool reports a sandbox denial or an error, retry with a corrected "
