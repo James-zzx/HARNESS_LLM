@@ -229,6 +229,13 @@ class Sandbox:
                 return True
         return False
 
+    def allow_dir(self, path: Union[str, Path]) -> None:
+        resolved = Path(path).resolve()
+        if any(resolved == a or _is_within(resolved, a) for a in self._allowed_paths):
+            return
+        self._allowed_paths.append(resolved)
+        self.allowed_dirs.append(str(resolved))
+
     def check_command(self, command: Union[str, Sequence[str]]) -> bool:
         if isinstance(command, (list, tuple)):
             command = " ".join(str(c) for c in command)
@@ -261,6 +268,7 @@ class Sandbox:
         timeout: Optional[float] = None,
         shell: Optional[bool] = None,
         network: bool = False,
+        cwd: Optional[Union[str, Path]] = None,
     ) -> RunResult:
         if timeout is None:
             timeout = self.timeout
@@ -279,6 +287,8 @@ class Sandbox:
             errors="replace",
             start_new_session=True,
         )
+        if cwd is not None:
+            popen_kwargs["cwd"] = str(cwd)
         if shell:
             proc = subprocess.Popen(command, shell=True, **popen_kwargs)
         else:

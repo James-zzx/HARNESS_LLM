@@ -177,3 +177,41 @@ def test_sandbox_check_integrates_with_tool_executor(tmp_path):
     factory_check = sandbox_check_from(sb)
     assert factory_check("run_shell", {"command": "rm -rf /"}) is False
     assert factory_check("write_file", {"path": "notes.txt"}) is True
+
+
+def test_sandbox_allow_dir_adds_to_allowed_paths(tmp_path):
+    allowed = tmp_path / "workspace"
+    allowed.mkdir()
+    sb = Sandbox(allowed_dirs=[str(allowed)])
+    extra = tmp_path / "extra"
+    extra.mkdir()
+
+    assert sb.is_allowed_path(str(extra / "f.txt")) is False
+    sb.allow_dir(str(extra))
+    assert sb.is_allowed_path(str(extra / "f.txt")) is True
+
+
+def test_sandbox_allow_dir_is_idempotent(tmp_path):
+    allowed = tmp_path / "workspace"
+    allowed.mkdir()
+    sb = Sandbox(allowed_dirs=[str(allowed)])
+    extra = tmp_path / "extra"
+    extra.mkdir()
+
+    sb.allow_dir(str(extra))
+    sb.allow_dir(str(extra))
+    assert sum(1 for a in sb.allowed_dirs if a == str(extra.resolve())) == 1
+
+
+def test_sandbox_run_respects_cwd(tmp_path):
+    sb = Sandbox(allowed_dirs=[str(tmp_path)])
+    target = tmp_path / "cwd_target"
+    target.mkdir()
+
+    result = sb.run(
+        "cd",
+        shell=True,
+        cwd=str(target),
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip().lower().replace("\\", "/") == str(target).lower().replace("\\", "/")
