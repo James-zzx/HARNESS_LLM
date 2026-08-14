@@ -114,11 +114,9 @@ def test_api_default_runner_isolates_task_work_dirs(tmp_path, monkeypatch):
     assert result.status == "COMPLETED"
     base = Path(tmp_path)
     assert not (base / "result.txt").exists()
-    subdirs = [
-        p for p in base.iterdir() if p.is_dir() and p.name.startswith("harness-task-")
-    ]
-    assert subdirs
-    assert (subdirs[0] / "result.txt").read_text(encoding="utf-8") == "hello"
+    tasks_dir = base / "harness-tasks"
+    assert (tasks_dir / "api-iso" / "result.txt").read_text(encoding="utf-8") == "hello"
+    assert not (base / "result.txt").exists()
 
 
 def test_get_task_returns_snapshot_copy():
@@ -830,3 +828,58 @@ def test_api_task_base_url_used_in_build_llm(tmp_path, monkeypatch):
     assert seen.get("base_url") == "http://127.0.0.1:9888/v1"
     assert isinstance(seen["client"], OpenAIClient)
     assert seen["client"]._base_url == "http://127.0.0.1:9888/v1"
+
+
+def test_api_work_dir_under_harness_tasks(tmp_path, monkeypatch):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM([json.dumps({"done": True})])
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-wd2", "prompt": "write"})
+        snapshot = _wait_for_task(manager, "api-wd2")
+
+    assert snapshot["status"] == "completed"
+    work_dir = Path(manager.get_work_dir("api-wd2"))
+    assert work_dir.parent.name == "harness-tasks"
+    assert work_dir.name == "api-wd2"
+
+
+def test_api_harness_tasks_dir_autocreated(tmp_path, monkeypatch):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM([json.dumps({"done": True})])
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-auto", "prompt": "write"})
+        snapshot = _wait_for_task(manager, "api-auto")
+
+    assert snapshot["status"] == "completed"
+    tasks_dir = Path(tmp_path) / "harness-tasks"
+    assert tasks_dir.is_dir()
+    assert (tasks_dir / "api-auto").is_dir()
+
+
+def test_api_work_dir_added_to_sandbox_allowed_dirs(tmp_path, monkeypatch):
+    def fake_build_llm(config, credential_store=None):
+        return MockLLM([json.dumps({"done": True})])
+
+    monkeypatch.setattr("harness.llm_adapter.build_llm", fake_build_llm)
+    monkeypatch.chdir(tmp_path)
+
+    manager = TaskManager()
+    app = create_app(task_manager=manager)
+    with TestClient(app) as client:
+        client.post("/api/tasks", json={"id": "api-sb", "prompt": "write"})
+        _wait_for_task(manager, "api-sb")
+
+    work_dir = Path(manager.get_work_dir("api-sb")).resolve()
+    assert work_dir.is_dir()

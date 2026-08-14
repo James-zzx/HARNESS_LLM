@@ -35,6 +35,16 @@ _SENSITIVE_PAIR = re.compile(
 )
 
 
+def _make_task_work_dir(base: Path, task_id: str) -> str:
+    tasks_dir = Path(base) / "harness-tasks"
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    if task_id and not any(sep in task_id for sep in ("/", "\\")):
+        work_dir = tasks_dir / task_id
+        work_dir.mkdir(parents=True, exist_ok=True)
+        return str(work_dir)
+    return tempfile.mkdtemp(prefix="harness-task-", dir=str(tasks_dir))
+
+
 def _redact_text(content: str) -> str:
     return _SENSITIVE_PAIR.sub(lambda match: match.group(1) + "***", content)
 
@@ -231,9 +241,8 @@ def _default_runner(manager: Optional[TaskManager] = None) -> TaskRunner:
                 task_config, llm=dataclasses.replace(task_config.llm, base_url=base_url)
             )
         llm = build_llm(task_config)
-        task_work_dir = tempfile.mkdtemp(
-            prefix="harness-task-", dir=str(runtime.work_dir)
-        )
+        task_work_dir = _make_task_work_dir(runtime.work_dir, task.id)
+        runtime.sandbox.allow_dir(task_work_dir)
         if manager is not None:
             manager.set_work_dir(task.id, task_work_dir)
         orchestrator = runtime.build_orchestrator(
