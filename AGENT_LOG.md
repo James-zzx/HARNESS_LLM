@@ -132,3 +132,41 @@
 - **成果**: 184 测试通过，dashboard 零外部依赖开箱即用
 - **推送**: github.com 网络阻断 → 用 GitHub git data REST API（走 api.github.com）增量重建 9 个 commit 推送，远程与本地 tree 完全一致，CI 三 job 全绿
 - **教训**: github.com 与 api.github.com 可能被网络环境区别阻断；git data API 的 commit SHA 与本地不同（content-addressed 仅对 blob/tree 成立），需维护 commit SHA 映射
+## 2026-08-14
+
+### [2026-08-14] — 真实 LLM 写文件修复：work_dir 锚定 + run_shell cwd + file_path 别名
+
+- **技能**: `brainstorming`, `writing-plans`, `subagent-driven-development`, `systematic-debugging`, `finishing-a-development-branch`
+- **背景**: DeepSeek 写文件任务频繁失败——文件区与对话区均空。多次提示词强化无效，改用代码层修复。
+- **根因调查**（systematic-debugging 证据链）:
+  - ① 沙箱启用时 `run_shell` 的 `cwd` 继承进程目录（项目根），非任务 work_dir → shell 写文件落到项目根 → 文件区（扫描 work_dir）恒空
+  - ② 沙箱预检用项目根语义（`allowed_dirs=["."]`），与工具层锚定的任务 work_dir 不一致
+  - ③ **写文件失败真因**：DeepSeek 用 `file_path`/`filepath` 参数键调用 write_file，而 harness 只读 `path` → 沙箱读到空路径永远拒绝（此前"路径越界"诊断方向是错的）
+  - ④ 对话区空：LLM 全程工具调用 + `{"done":true}`，无自然语言 → conversation_sink 不触发
+- **设计**（brainstorming → spec）：方案 A —— 写文件硬锚定到任务 work_dir，机制全在代码（非提示词，符合 §A.4 B/C）
+- **实现**（subagent-driven-development，worktree `work-dir-anchoring`，6 commit + final review 1 commit）:
+  - `30d172e` `Sandbox.allow_dir` + `Sandbox.run` 加 `cwd`
+  - `c5ebba2` 修复 run_shell 沙箱下 cwd（之前跑到项目根）
+  - `822e56e` work_dir 路由到 `harness-tasks/<task_id>` + 自动创建 + 沙箱锚定
+  - `5dea568` 修复 `.`/`..` id 逃逸
+  - `d48c394` `.gitignore` 加 `harness-tasks/`
+  - `1b0bcb0` final review 修复：drive-colon id 逃逸 + 锁 + OSError + 测试强化
+- **post-merge 修复**（systematic-debugging 定位真因）:
+  - `21ead37` 兼容 `file_path`/`filepath` 参数别名（写文件真因）
+  - `e574671` 系统提示要求完成前先自然语言总结
+  - `6dc8d52` CI 跨平台修复（Linux 上 `cd` 无输出）
+- **人工裁决**: ① 写文件越界 → 拒绝（不自动重定位）② work_dir 用已存在的 `harness-tasks/` ③ 对话区空 → 提示要求自然语言总结 ④ 后续可能放宽为用户指定目标文件夹（暂不做）
+- **成果**: 236 → 238 测试通过，ruff clean，CI 3 job 全绿；真实 DeepSeek 端到端 PASS（对话区 + 文件区均有内容）；清理 85 个旧 `harness-task-*` 残留目录
+- **教训**: 真实 LLM 的参数键名不可控，工具层应宽容解析别名而非假设严格契约；诊断"沙箱拒绝"时应先捕获工具实际收到的 params，而非猜测路径内容
+
+### [2026-08-15] — 交付物审计与文档同步
+
+- **技能**: 无（纯文档检查与更新）
+- **操作**: 按 requirements.md 五条交付物逐项审计
+- **审计结果**:
+  - ① SPEC.md / PLAN.md / SPEC_PROCESS.md：SPEC_PROCESS 无需改；SPEC.md 补 work_dir 锚定机制；PLAN.md P6-12 更新为最终实现
+  - ② 完整源码 + commit/PR 历史：完整；凭据扫描零真实 key；`.env` 未跟踪 ✓
+  - ③ Dockerfile + 分发说明：完整（多阶段构建 + 非 root + 容器内 env key 说明）✓
+  - ④ README.md：补"目录结构"章节（原缺失，要求必须有）、"已知限制"章节、work_dir 锚定说明、更新过时的 `harness-task-*` 描述
+  - ⑤ AGENT_LOG.md：补 08-14/08-15 日志（本条目）
+- **教训**: README 曾缺"目录结构"与"已知限制"两个要求章节；收尾阶段应逐条对照 requirements 交付清单核验文档完整性

@@ -754,7 +754,7 @@ Phase 5 (分发)                                       │
 - **复杂度**: M
 - **涉及文件**: `src/harness/api.py`, `src/harness/webui/index.html`, `src/harness/webui/app.js`, `src/harness/webui/style.css`, `src/tests/test_api.py`, `src/tests/test_dashboard.py`, `SPEC.md`, `README.md`
 - **内容**:
-  - [ ] api.py: `TaskRecord` 增加 `work_dir: Optional[str] = None`；`_default_runner.run` 创建 `mkdtemp` 后 `manager.set_work_dir(task_id, task_work_dir)`
+  - [x] api.py: `TaskRecord` 增加 `work_dir: Optional[str] = None`；`_default_runner.run` 通过 `_make_task_work_dir` 创建 `<项目根>/harness-tasks/<task_id>`（不存在时自动创建；非法 id 如空/`.`/`..`/含分隔符/驱动器冒号回退 `mkdtemp`），随后 `runtime.sandbox.allow_dir(work_dir)` 把目录加入沙箱允许列表，再 `manager.set_work_dir(task_id, task_work_dir)`
   - [ ] api.py 新增端点:
     - `GET /api/tasks/{id}/files` — 列出工作目录内文件（相对路径 + 大小；空/无 work_dir → 空列表）
     - `GET /api/tasks/{id}/files/{path}` — 读取文件内容（**路径校验：必须在工作目录内，禁止 ../ 穿越**；内容脱敏敏感字段）

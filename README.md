@@ -307,6 +307,13 @@ export HARNESS_SANDBOX_NETWORK=allow
 2. **规则引擎层（Guardrail）**：`dangerous_commands` 子串规则 + 可配置正则规则，对工具调用（如 `run_shell`）做确定性检测。
 3. **HITL 状态机层**：危险命令触发 `PAUSED`，经 CLI 阻塞输入（`y/n/t`）或 REST/WebUI 外部决策批准/拒绝/超时，拒绝时构造反馈消息回灌给 LLM 要求换方案。
 
+**工作目录锚定（Work-dir Anchoring）**：每个任务的产物只允许落在 `<项目根>/harness-tasks/<task_id>/`（自动创建，`.gitignore` 忽略）。`write_file`/`read_file`/`edit_file`/`list_dir` 的路径由两层代码机制硬性限定在该目录内：
+
+- **沙箱预检**：任务创建时把该任务 work_dir 通过 `Sandbox.allow_dir()` 动态加入沙箱允许目录，越界路径（绝对路径、`..`、系统目录）在工具执行前即被拒绝；
+- **工具层锚定**：`_PathTool._resolve` 对任何路径做 `is_relative_to(work_dir)` 校验，作为沙箱之外的第二道防线，双重保证产物不越界。
+
+路径参数兼容 LLM 常见的多种键名（`path` / `file_path` / `filepath`），避免因参数名不一致导致合法写入被误拒。`run_shell` 在任务 work_dir 内执行（`cwd=work_dir`），保证测试/构建命令能访问该任务的产物。
+
 以上三层已通过 `build_runtime(config)` 接入生产执行路径：`harness run` 与 REST API 的任务均构造真实的 `Sandbox` + `HITLGate` 执行（不再是 library-only 组件），沙箱拒绝的命令不会被执行，HITL 拒绝会暂停任务并把反馈回灌给 LLM。所有护栏逻辑为确定性代码，可用 MockLLM 离线单测验证（如 `GuardrailEngine().check("rm -rf /") → True`）。
 
 ### LLM 适配与离线测试
@@ -316,6 +323,44 @@ export HARNESS_SANDBOX_NETWORK=allow
 ### 日志与追踪
 
 基于 structlog 的结构化日志：每条日志带 `trace_id`（贯穿同一任务的所有子模块）与 `phase`；支持 `console`/`json` 两种格式；`key`/`secret`/`token`/`password` 字段自动脱敏为 `***`。
+
+## 目录结构
+
+```
+harness_LLM/
+├── src/
+│   └── harness/
+│       ├── cli.py / main.py        # CLI 入口与命令分发
+│       ├── api.py                  # FastAPI REST API + TaskManager + 任务 work_dir 路由
+│       ├── config.py               # 声明式配置（文件 + 环境变量合并）
+│       ├── credential_store.py     # OS 钥匙串 / env 凭据存储
+│       ├── orchestrator.py         # Agent 主循环 + 系统提示 + 对话 sink
+│       ├── task.py                 # 任务解析与校验
+│       ├── sandbox.py              # 沙箱（文件白名单 / 命令黑名单 / cwd / 资源限制）
+│       ├── hitl.py                 # 护栏引擎 + HITL 状态机
+│       ├── tool_executor.py        # 工具分发（write_file / read_file / run_shell 等）
+│       ├── memory.py               # 会话记忆与上下文裁剪
+│       ├── evaluator.py            # 确定性反馈校验器
+│       ├── llm_adapter.py / mock_llm.py  # LLM 抽象层（真实 / 离线 mock）
+│       ├── message_queue.py        # 线程安全运行时消息队列
+│       ├── dashboard.py / webui/   # 内置图形化 Dashboard 前端
+│       └── open_design.py          # Open Design WebUI（可选增强）
+├── src/tests/                      # 确定性单元测试（无真实 LLM）
+├── harness-tasks/                  # 任务产物目录（自动创建，.gitignore 忽略，不入库）
+├── examples/                       # 示例任务与配置
+├── Dockerfile                      # 分发镜像（多阶段构建）
+├── SPEC.md / PLAN.md               # 设计与实现计划文档
+├── SPEC_PROCESS.md                 # 设计流程自我验证记录
+├── AGENT_LOG.md                    # 开发日志（含凭据自查与人工裁决）
+└── requirements.md                 # 课程要求（原始）
+```
+
+## 已知限制
+
+- **`run_shell` 仍是自由的读写通道**：尽管 `run_shell` 现在固定在任务 work_dir 内执行（`cwd=work_dir`），系统提示也要求用 `write_file` 而非 shell 写文件，但代码层面**不阻止** `run_shell` 通过 shell 重定向或 `python -c "open(...)"` 写到 work_dir 之外（如绝对路径）。当前靠提示词约束 + 沙箱命令黑名单兜底；如需硬性禁止 shell 越界写入，可在 `check_command` 中拦截含绝对路径重定向的命令（后续版本）。
+- **LLM 参数键名不可控**：真实 LLM 可能用 `path` / `file_path` / `filepath` 等不同键名调用路径工具。harness 已兼容这三种常见键名，但若某模型使用其它命名（如 `filename`）会被视为缺少参数而拒绝；遇到时可补充别名。
+- **Windows 平台为主**：沙箱的资源限制（内存/优先级）在 Windows 上部分生效，跨平台行为存在差异；`rm` 命令检测针对 POSIX 与 Windows 语法均有覆盖。
+- **`harness-tasks/` 不自动清理**：任务产物目录会持续累积；删除 `harness-tasks/<task_id>` 即可清理单个任务产物（该目录被 `.gitignore` 忽略，不影响仓库）。
 
 ## 凭据安全配置说明
 
@@ -430,7 +475,7 @@ python -m uvicorn harness.api:app
 | `GET /api/tasks/{id}/messages` | 获取任务运行时对话记录（当前为 user 消息） |
 | `POST /api/tasks/{id}/interrupt` | 请求中断任务，使其进入 `USER_INPUT` 状态等待用户输入 |
 
-API 任务默认走与 CLI 相同的真实运行时（`build_runtime` + 沙箱 + HITL），凭据通过 `build_llm` 按 `config.credential.backend` 解析；`llm.mock: true` 时离线运行，不触碰凭据存储。每个任务使用独立的 `harness-task-*` 工作目录，互不干扰。
+API 任务默认走与 CLI 相同的真实运行时（`build_runtime` + 沙箱 + HITL），凭据通过 `build_llm` 按 `config.credential.backend` 解析；`llm.mock: true` 时离线运行，不触碰凭据存储。每个任务使用独立的工作目录 `<项目根>/harness-tasks/<task_id>`（不存在时自动创建），互不干扰；写文件类工具的路径硬锚定到该目录，越界一律被拒绝。
 
 ### Open Design WebUI（可选）
 

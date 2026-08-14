@@ -393,13 +393,22 @@ MessageQueue {
 
 | 工具 | 输入 | 输出 | 安全检查 |
 |------|------|------|---------|
-| `read_file(path)` | 文件路径 | 文件内容 | 路径在白名单内 |
-| `write_file(path, content)` | 路径 + 内容 | 写入结果 | 路径在白名单内 |
-| `edit_file(path, old, new)` | 路径 + 替换内容 | 编辑结果 | 路径在白名单内 |
-| `run_shell(command)` | shell 命令 | stdout/stderr/exit_code | 命令不在黑名单 + HITL 检查 |
-| `list_dir(path)` | 目录路径 | 文件列表 | 路径在白名单内 |
+| `read_file(path)` | 文件路径 | 文件内容 | 路径在任务 work_dir 内（沙箱预检 + 工具层锚定） |
+| `write_file(path, content)` | 路径 + 内容 | 写入结果 | 路径在任务 work_dir 内（沙箱预检 + 工具层锚定） |
+| `edit_file(path, old, new)` | 路径 + 替换内容 | 编辑结果 | 路径在任务 work_dir 内（沙箱预检 + 工具层锚定） |
+| `run_shell(command)` | shell 命令 | stdout/stderr/exit_code | 命令不在黑名单 + HITL 检查 + cwd 限定在 work_dir |
+| `list_dir(path)` | 目录路径 | 文件列表 | 路径在任务 work_dir 内（沙箱预检 + 工具层锚定） |
 
 **实现方式**: 确定性代码（`Tool` 基类 + `ToolRegistry` + `ToolExecutor`），不依赖 LLM 判断。
+
+**工作目录锚定（Work-dir Anchoring）**：每个任务创建时，工作目录固定为 `<项目根>/harness-tasks/<task_id>`（自动创建，`.gitignore` 忽略；`task_id` 为非法值如 `.`/`..`/含分隔符/驱动器冒号时回退到 `mkdtemp`）。锚定由两层代码机制保证：
+
+1. **沙箱预检**：任务创建后通过 `Sandbox.allow_dir(work_dir)` 把该任务目录动态加入沙箱允许目录；`build_check` 对路径工具（`write_file`/`read_file`/`edit_file`/`list_dir`）先做 `is_allowed_path` 校验，越界（绝对路径、`..`、系统目录）在工具执行前拒绝。
+2. **工具层锚定**：`_PathTool._resolve` 对任意路径执行 `(work_dir / raw).resolve()` 并校验 `is_relative_to(work_dir)`，作为沙箱之外的第二道防线（防沙箱判定漏洞）。
+
+路径参数兼容 LLM 常见的 `path` / `file_path` / `filepath` 键名，避免参数名不一致导致合法写入被误拒。`run_shell` 通过 `Sandbox.run(cwd=work_dir)` 在任务目录内执行（修复了此前沙箱启用时 cwd 为项目根的缺陷），保证测试/构建命令能访问任务产物。
+
+以上锚定逻辑全部为确定性代码，可用 MockLLM 离线单测验证（移除 LLM 后仍可测，符合 §A.4(C)）。
 
 **（2）客观反馈信号**
 
