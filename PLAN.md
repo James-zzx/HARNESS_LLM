@@ -659,25 +659,25 @@ Phase 5 (分发)                                       │
 - **复杂度**: M
 - **涉及文件**: src/harness/api.py, src/harness/webui/index.html, src/harness/webui/app.js, src/harness/webui/style.css, src/tests/test_api.py, src/tests/test_dashboard.py
 - **内容**:
-  - [ ] api.py 新增凭据端点:
+  - [x] api.py 新增凭据端点:
     - GET /api/credential/{service}/{key} — 返回 {configured: bool}（**不返回明文**）
     - PUT /api/credential/{service}/{key} — body {value}，非空校验，写入 CredentialStore
     - DELETE /api/credential/{service}/{key} — 清除
     - 后端从 config.credential.backend 选择（keyring/env），与 uild_llm 一致
-  - [ ] webui/index.html: 顶栏新增 [API Key] 按钮 + API-Key 配置弹窗（service/key 默认 harness/openai、key 值隐藏输入、状态区、保存/清除按钮）
-  - [ ] webui/app.js: 弹窗交互 — 打开时 GET 查询状态、保存 PUT、清除 DELETE、结果提示
-  - [ ] webui/style.css: 弹窗与按钮样式（复用现有 modal 风格）
-  - [ ] 安全: key 值永不在前端/API 响应回显，仅返回 configured
+  - [x] webui/index.html: 顶栏新增 [API Key] 按钮 + API-Key 配置弹窗（service/key 默认 harness/openai、key 值隐藏输入、状态区、保存/清除按钮）
+  - [x] webui/app.js: 弹窗交互 — 打开时 GET 查询状态、保存 PUT、清除 DELETE、结果提示
+  - [x] webui/style.css: 弹窗与按钮样式（复用现有 modal 风格）
+  - [x] 安全: key 值永不在前端/API 响应回显，仅返回 configured
 - **TDD 先写测试**:
-  - [ ] 	est_api_credential_put: PUT 保存后 GET 返回 configured=true
-  - [ ] 	est_api_credential_get_no_leak: GET 响应不含明文 key 值
-  - [ ] 	est_api_credential_delete: DELETE 后 GET 返回 configured=false
-  - [ ] 	est_api_credential_empty_rejected: PUT 空 value → 400
-  - [ ] 	est_dashboard_api_key_button: 页面含 API Key 按钮 + 弹窗元素
+  - [x] 	est_api_credential_put: PUT 保存后 GET 返回 configured=true
+  - [x] 	est_api_credential_get_no_leak: GET 响应不含明文 key 值
+  - [x] 	est_api_credential_delete: DELETE 后 GET 返回 configured=false
+  - [x] 	est_api_credential_empty_rejected: PUT 空 value → 400
+  - [x] 	est_dashboard_api_key_button: 页面含 API Key 按钮 + 弹窗元素
 - **验证步骤**:
-  - [ ] pytest src/tests/test_api.py src/tests/test_dashboard.py 全部通过
-  - [ ] 全量 pytest src/tests/ 无回归
-  - [ ] 手动: dashboard 弹窗设置/查看/清除 key
+  - [x] pytest src/tests/test_api.py src/tests/test_dashboard.py 全部通过
+  - [x] 全量 pytest src/tests/ 无回归
+  - [x] 手动: dashboard 弹窗设置/查看/清除 key
 
 
 ### P6-08: LLM 双模式（默认 Mock 离线 + 真实 LLM 切换）
@@ -686,23 +686,23 @@ Phase 5 (分发)                                       │
 - **复杂度**: M
 - **涉及文件**: `src/harness/config.py`, `src/harness/mock_llm.py`, `src/harness/webui/index.html`, `src/harness/webui/app.js`, `src/harness/webui/style.css`, `src/harness/main.py`(init 注释), `examples/config.yaml`, `src/tests/test_config.py`, `src/tests/test_mock_llm.py`, `src/tests/test_dashboard.py`, `src/tests/test_cli.py`, `README.md`, `SPEC.md`
 - **内容**:
-  - [ ] config.py: `LLMConfig.mock` 默认值 `False -> True`（未配置真实 LLM 时离线运行）
-  - [ ] mock_llm.py: 未提供 preset 时返回默认演示循环（写 mock-output.txt → done），任务可完整跑完
-  - [ ] webui/index.html: 顶栏新增 LLM 模式开关（离线 Mock / 真实 LLM）
-  - [ ] webui/app.js: 模式选择持久化（localStorage）；选“真实 LLM”时提示配置 llm.mock:false + credential_ref + base_url（复用 API-Key 弹窗）；任务提交带上模式
-  - [ ] webui/style.css: 模式开关样式
-  - [ ] main.py init 注释、examples/config.yaml: mock 默认 true 说明
-  - [ ] README: 双模式说明
+  - [x] config.py: `LLMConfig.mock` 默认值 `False -> True`（未配置真实 LLM 时离线运行）
+  - [x] mock_llm.py: 未提供 preset 时返回默认演示循环（写 mock-output.txt → done），任务可完整跑完
+  - [x] webui/index.html: 顶栏新增 LLM 模式开关（离线 Mock / 真实 LLM）
+  - [x] webui/app.js: 模式选择持久化（localStorage）；选“真实 LLM”时提示配置 llm.mock:false + credential_ref + base_url（复用 API-Key 弹窗）；任务提交带上模式
+  - [x] webui/style.css: 模式开关样式
+  - [x] main.py init 注释、examples/config.yaml: mock 默认 true 说明
+  - [x] README: 双模式说明
 - **TDD 先写测试**:
-  - [ ] `test_config_mock_default_true`: 默认配置 `llm.mock is True`
-  - [ ] `test_mock_llm_default_demo_cycle`: MockLLM() 无 preset 时返回写文件→done 序列，chat 两次内容不同且含 tool 动作
-  - [ ] `test_dashboard_llm_mode_toggle`: 页面含模式开关元素
-  - [ ] `test_cli_init_mock_true`: init 生成 harness.yaml 含 `mock: true`
-  - [ ] 现有测试更新: test_config.py:9 (`mock is False` -> `True`), test_cli.py:24 (`mock: false` -> `mock: true`)
+  - [x] `test_config_mock_default_true`: 默认配置 `llm.mock is True`
+  - [x] `test_mock_llm_default_demo_cycle`: MockLLM() 无 preset 时返回写文件→done 序列，chat 两次内容不同且含 tool 动作
+  - [x] `test_dashboard_llm_mode_toggle`: 页面含模式开关元素
+  - [x] `test_cli_init_mock_true`: init 生成 harness.yaml 含 `mock: true`
+  - [x] 现有测试更新: test_config.py:9 (`mock is False` -> `True`), test_cli.py:24 (`mock: false` -> `mock: true`)
 - **验证步骤**:
-  - [ ] `pytest src/tests/test_config.py src/tests/test_mock_llm.py src/tests/test_dashboard.py src/tests/test_cli.py` 全部通过
-  - [ ] 全量 `pytest src/tests/` 无回归
-  - [ ] 手动: dashboard 默认离线提交任务成功（MockLLM 演示循环）；切真实模式提示配置
+  - [x] `pytest src/tests/test_config.py src/tests/test_mock_llm.py src/tests/test_dashboard.py src/tests/test_cli.py` 全部通过
+  - [x] 全量 `pytest src/tests/` 无回归
+  - [x] 手动: dashboard 默认离线提交任务成功（MockLLM 演示循环）；切真实模式提示配置
 
 
 ### P6-09: 对话区显示 agent 答复（隐私限制）
@@ -711,20 +711,20 @@ Phase 5 (分发)                                       │
 - **复杂度**: M
 - **涉及文件**: `src/harness/orchestrator.py`, `src/harness/api.py`, `src/tests/test_orchestrator.py`, `src/tests/test_api.py`, `src/tests/test_dashboard.py`, `src/harness/webui/app.js`(确认), `SPEC.md`, `README.md`
 - **内容**:
-  - [ ] orchestrator: 新增可选 `conversation_sink: Optional[Callable[[dict], None]]` 参数；运行时把**自然语言答复**（`_parse_intent` 返回 None 的非空响应）记录为 `{"role":"assistant","content":...}` 推给 sink；**工具调用 JSON 意图不记录**
-  - [ ] api: `_run_task` 的 `on_orchestrator` 给 orchestrator 注入 `conversation_sink=manager.append_message`；`get_messages` 现返回 user + assistant
-  - [ ] **隐私（§3.1）**: messages 绝不包含工具参数/结果/命令/文件内容；敏感字段（key/secret/token/password）在记录前脱敏兜底；GET 响应不回显凭据明文
-  - [ ] 前端: `renderConversation` 已支持双角色，确认只渲染 user/assistant（无 tool 消息）
+  - [x] orchestrator: 新增可选 `conversation_sink: Optional[Callable[[dict], None]]` 参数；运行时把**自然语言答复**（`_parse_intent` 返回 None 的非空响应）记录为 `{"role":"assistant","content":...}` 推给 sink；**工具调用 JSON 意图不记录**
+  - [x] api: `_run_task` 的 `on_orchestrator` 给 orchestrator 注入 `conversation_sink=manager.append_message`；`get_messages` 现返回 user + assistant
+  - [x] **隐私（§3.1）**: messages 绝不包含工具参数/结果/命令/文件内容；敏感字段（key/secret/token/password）在记录前脱敏兜底；GET 响应不回显凭据明文
+  - [x] 前端: `renderConversation` 已支持双角色，确认只渲染 user/assistant（无 tool 消息）
 - **TDD 先写测试**:
-  - [ ] `test_orchestrator_records_natural_reply`: MockLLM 返回自然语言 → conversation_sink 收到 assistant 消息
-  - [ ] `test_orchestrator_skips_tool_intent`: MockLLM 返回工具 JSON → sink 不收到（工具不记录）
-  - [ ] `test_api_messages_include_assistant`: GET messages 含 assistant
-  - [ ] `test_api_messages_no_tool_content`: messages 不含工具参数/命令（隐私）
-  - [ ] `test_api_messages_redacts_secrets`: messages 中 key/token 字段被脱敏（§3.1）
+  - [x] `test_orchestrator_records_natural_reply`: MockLLM 返回自然语言 → conversation_sink 收到 assistant 消息
+  - [x] `test_orchestrator_skips_tool_intent`: MockLLM 返回工具 JSON → sink 不收到（工具不记录）
+  - [x] `test_api_messages_include_assistant`: GET messages 含 assistant
+  - [x] `test_api_messages_no_tool_content`: messages 不含工具参数/命令（隐私）
+  - [x] `test_api_messages_redacts_secrets`: messages 中 key/token 字段被脱敏（§3.1）
 - **验证步骤**:
-  - [ ] `pytest src/tests/test_orchestrator.py src/tests/test_api.py src/tests/test_dashboard.py` 全部通过
-  - [ ] 全量 `pytest src/tests/` 无回归
-  - [ ] 手动: 任务运行中提问，对话区显示 user + agent 答复
+  - [x] `pytest src/tests/test_orchestrator.py src/tests/test_api.py src/tests/test_dashboard.py` 全部通过
+  - [x] 全量 `pytest src/tests/` 无回归
+  - [x] 手动: 任务运行中提问，对话区显示 user + agent 答复
 
 
 ### P6-10: UI LLM 模式开关真正切换 llm.mock（运行时动态覆盖）
@@ -733,19 +733,19 @@ Phase 5 (分发)                                       │
 - **复杂度**: M
 - **涉及文件**: `src/harness/task.py`, `src/harness/api.py`, `src/harness/webui/app.js`(确认), `src/tests/test_task.py`, `src/tests/test_api.py`, `SPEC.md`, `README.md`
 - **内容**:
-  - [ ] task.py: `Task` dataclass 增加 `llm_mode: Optional[str] = None`；`from_dict` 解析 `llm_mode`（"mock"/"real"，可选）
-  - [ ] api.py: `_run_task` 读取任务 `llm_mode`，构建覆盖后的 config（`dataclasses.replace(config, llm=replace(config.llm, mock=...))`），传给 `build_llm`；缺 key 时真实模式返回明确提示（复用现有错误处理）
-  - [ ] 前端: `task.llm_mode` 已随提交发送（P6-08），确认后端解析生效；开关 title/提示更新为"任务运行时生效"
-  - [ ] 隐私: 不改动（§3.1）
+  - [x] task.py: `Task` dataclass 增加 `llm_mode: Optional[str] = None`；`from_dict` 解析 `llm_mode`（"mock"/"real"，可选）
+  - [x] api.py: `_run_task` 读取任务 `llm_mode`，构建覆盖后的 config（`dataclasses.replace(config, llm=replace(config.llm, mock=...))`），传给 `build_llm`；缺 key 时真实模式返回明确提示（复用现有错误处理）
+  - [x] 前端: `task.llm_mode` 已随提交发送（P6-08），确认后端解析生效；开关 title/提示更新为"任务运行时生效"
+  - [x] 隐私: 不改动（§3.1）
 - **TDD 先写测试**:
-  - [ ] `test_task_llm_mode_field`: from_dict 解析 llm_mode（默认 None / "mock" / "real"）
-  - [ ] `test_api_task_llm_mode_real_uses_real_llm`: 提交 llm_mode=real 任务 → _run_task 用 mock=false 构建 build_llm（注入 stub 验证）
-  - [ ] `test_api_task_llm_mode_mock_uses_mock`: 提交 llm_mode=mock → build_llm 用 mock=true
-  - [ ] `test_api_task_default_mock`: 无 llm_mode → 默认 mock（服务端 config）
+  - [x] `test_task_llm_mode_field`: from_dict 解析 llm_mode（默认 None / "mock" / "real"）
+  - [x] `test_api_task_llm_mode_real_uses_real_llm`: 提交 llm_mode=real 任务 → _run_task 用 mock=false 构建 build_llm（注入 stub 验证）
+  - [x] `test_api_task_llm_mode_mock_uses_mock`: 提交 llm_mode=mock → build_llm 用 mock=true
+  - [x] `test_api_task_default_mock`: 无 llm_mode → 默认 mock（服务端 config）
 - **验证步骤**:
-  - [ ] `pytest src/tests/test_task.py src/tests/test_api.py` 全部通过
-  - [ ] 全量 `pytest src/tests/` 无回归
-  - [ ] 手动: dashboard 切"真实 LLM"提交任务 → 实际调用真实端点（本地 mock 验证）；切"离线" → 走 mock
+  - [x] `pytest src/tests/test_task.py src/tests/test_api.py` 全部通过
+  - [x] 全量 `pytest src/tests/` 无回归
+  - [x] 手动: dashboard 切"真实 LLM"提交任务 → 实际调用真实端点（本地 mock 验证）；切"离线" → 走 mock
 
 
 ### P6-12: 产物文件浏览器（任务工作目录 + §3.1）
@@ -755,23 +755,23 @@ Phase 5 (分发)                                       │
 - **涉及文件**: `src/harness/api.py`, `src/harness/webui/index.html`, `src/harness/webui/app.js`, `src/harness/webui/style.css`, `src/tests/test_api.py`, `src/tests/test_dashboard.py`, `SPEC.md`, `README.md`
 - **内容**:
   - [x] api.py: `TaskRecord` 增加 `work_dir: Optional[str] = None`；`_default_runner.run` 通过 `_make_task_work_dir` 创建 `<项目根>/harness-tasks/<task_id>`（不存在时自动创建；非法 id 如空/`.`/`..`/含分隔符/驱动器冒号回退 `mkdtemp`），随后 `runtime.sandbox.allow_dir(work_dir)` 把目录加入沙箱允许列表，再 `manager.set_work_dir(task_id, task_work_dir)`
-  - [ ] api.py 新增端点:
+  - [x] api.py 新增端点:
     - `GET /api/tasks/{id}/files` — 列出工作目录内文件（相对路径 + 大小；空/无 work_dir → 空列表）
     - `GET /api/tasks/{id}/files/{path}` — 读取文件内容（**路径校验：必须在工作目录内，禁止 ../ 穿越**；内容脱敏敏感字段）
     - `GET /api/tasks/{id}/files/{path}/download` — 下载（FileResponse，用户可保存）
-  - [ ] **§3.1**: 文件内容显示时脱敏（复用 logger 脱敏）；命令/凭据不暴露；路径穿越被拒（404）
-  - [ ] 前端: 任务详情加"产物文件"区（任务完成后显示文件列表；点击查看内容；下载按钮）
+  - [x] **§3.1**: 文件内容显示时脱敏（复用 logger 脱敏）；命令/凭据不暴露；路径穿越被拒（404）
+  - [x] 前端: 任务详情加"产物文件"区（任务完成后显示文件列表；点击查看内容；下载按钮）
 - **TDD 先写测试**:
-  - [ ] `test_api_files_list`: 有 work_dir 的任务 → 列出文件
-  - [ ] `test_api_files_read`: 读文件内容（脱敏后）
-  - [ ] `test_api_files_path_traversal_blocked`: `../` 穿越 → 404
-  - [ ] `test_api_files_no_workdir`: 无 work_dir → 空列表/404
-  - [ ] `test_api_files_redacts_secrets`: 文件含 key/token → 显示脱敏（§3.1）
-  - [ ] `test_dashboard_files_section`: 页面含产物文件区元素
+  - [x] `test_api_files_list`: 有 work_dir 的任务 → 列出文件
+  - [x] `test_api_files_read`: 读文件内容（脱敏后）
+  - [x] `test_api_files_path_traversal_blocked`: `../` 穿越 → 404
+  - [x] `test_api_files_no_workdir`: 无 work_dir → 空列表/404
+  - [x] `test_api_files_redacts_secrets`: 文件含 key/token → 显示脱敏（§3.1）
+  - [x] `test_dashboard_files_section`: 页面含产物文件区元素
 - **验证步骤**:
-  - [ ] `pytest src/tests/test_api.py src/tests/test_dashboard.py` 全部通过
-  - [ ] 全量 `pytest src/tests/` 无回归
-  - [ ] 手动: DeepSeek 写文件任务 → 前端产物文件区显示文件，可查看/下载
+  - [x] `pytest src/tests/test_api.py src/tests/test_dashboard.py` 全部通过
+  - [x] 全量 `pytest src/tests/` 无回归
+  - [x] 手动: DeepSeek 写文件任务 → 前端产物文件区显示文件，可查看/下载
 
 
 ## 完成清单
